@@ -141,7 +141,7 @@ sudo nixos-rebuild switch --flake /etc/nixos#nixos
 路径形如 `a/services/…`），追加到 `home.nix` 的 `patches` 列表里 → `sudo git -C /etc/nixos add -A`
 （**不做这步 nix 看不到文件**）→ `nixos-rebuild build` 验证 → `switch`。
 
-## UI 交互音效（Hyprland 事件 + pw-play）
+## UI 交互音效（Hyprland 事件/键位 + 外壳 QML 补丁）
 
 外壳 Caelestia 自己**没有任何音效接口**（assets 里只有壁纸/gif/字体/pam，唯一叫 audio 的是音量与
 设备管理；上游唯一相关的 PR #1631 未合并），所以「点它自己的按钮出声」只能改 QML（见上一节）。
@@ -209,6 +209,55 @@ hyprctl dispatch "hl.dsp.focus({workspace = 9})"                        # 切工
 
 > 注：`pw-record --target <sink>` 抓不到声音（不会自动连到 sink 的 monitor 口），
 > 要录 monitor 就走 `ffmpeg -f pulse -i <sink 名>.monitor`（pipewire-pulse 提供 PA 兼容层）。
+
+### C1：外壳内部交互音（`patches/caelestia/0003-ui-sounds.patch`）
+
+上面那套只覆盖「Hyprland 看得见的」；鼠标点栏上图标、点启动器条目、点开关、拖滑条、滚轮这些
+只有外壳自己知道。C1 就是给外壳打 QML 补丁，但**不逐处改**，而是挂在共享组件上：
+
+| 补丁文件 | 覆盖 |
+| --- | --- |
+| **新增** `services/UiSounds.qml` | 单例：同一音频文件限流（点击 40ms / 开关 60ms / 滑条 90ms）+ `Quickshell.execDetached(["pw-play", …])`；`CAELESTIA_UI_SOUNDS=0` 可整体静音 |
+| `components/StateLayer.qml` | **所有走它的点击**——实测 48 个文件：按钮、`bar` 图标（Power…）、popout 条目、启动器条目、utilities 的 tile、锁屏、Nexus、文件对话框 |
+| `components/controls/StyledSwitch.qml` | 开关（`Switch` 模板不吃 StateLayer，所以不会和点击音重复） |
+| `components/controls/FilledSlider.qml` | OSD 的音量 / 亮度条**拖动** |
+| `components/controls/StyledSlider.qml` | 弹出面板 / Nexus / 仪表盘媒体页的滑条 |
+| `components/controls/CustomMouseArea.qml` | **滚轮**：音量、亮度、工作区、日历翻页、滚动条 |
+
+素材（`sfx/`，都由 AOSP `Effect_Tick.ogg` 派生，ffmpeg 转 48k 立体声）：
+`ui-click` -9dB、`ui-toggle-on` -7dB（音高×1.28）、`ui-toggle-off` -7dB（×0.82）、`ui-scroll` -17dB（×1.42）。
+
+关掉（声明式，一行）：`programs.caelestia.systemd.environment = [ "CAELESTIA_UI_SOUNDS=0" ];` 再 rebuild
+（外壳重启一次，`KillMode=process` 已保证不连坐你的应用）。
+
+**验收（不需要点界面）**——把补丁产物里的 `UiSounds.qml` 单独拿出来，用 `qs -p` 驱动一个最小配置：
+
+```bash
+mkdir -p /tmp/uisfx-test && cp <新外壳>/share/caelestia-shell/services/UiSounds.qml /tmp/uisfx-test/
+cat > /tmp/uisfx-test/shell.qml <<'QML'
+import QtQuick
+import Quickshell
+Scope {
+    Timer { interval: 700;  running: true; onTriggered: UiSounds.click() }
+    Timer { interval: 1500; running: true; onTriggered: UiSounds.toggle(true) }
+    Timer { interval: 2300; running: true; onTriggered: UiSounds.toggle(false) }
+    Timer { interval: 3100; running: true; onTriggered: UiSounds.slider() }
+    Timer { interval: 4200; running: true; onTriggered: Qt.quit() }
+}
+QML
+# 录 null sink 的 monitor 后 qs -p /tmp/uisfx-test，分析峰值
+```
+
+实测（2026-09-13）：
+- 默认 → **恰好 4 段**：`1.24s=-9.0`(click)、`2.04s=-7.0`(toggle-on)、`2.86s=-7.0`(toggle-off)、`3.67s=-17.0`(scroll)。
+- `CAELESTIA_UI_SOUNDS=0` → **0 段**（开关有效）。
+- 用户在真外壳里操作时，捕获里额外出现 -9dB 点击音 → 说明 `StateLayer` 那处补丁在真外壳里确实在响。
+- 顺带证明 `Quickshell.execDetached` 能用裸命令名：quickshell 生成进程的 PATH 含
+  `/run/current-system/sw/bin`（`command -v pw-play` 命中、`rc=0`）。
+
+**已知缺口**：少数手写 `MouseArea` 的组件没有音——`modules/bar/components/TrayItem.qml`（托盘条目）、
+`Clock.qml`、`OsIcon.qml`（启动器入口，已随竖栏精简一起关掉）；面板「打开/关闭」本身没有单独音
+（点它的那一下就是音）。延迟与上面的 Hyprland 路线相同（每条音仍起一个 `pw-play`，≈100–140ms 起流）。
 
 ## 已知坑
 
