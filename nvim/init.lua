@@ -1,0 +1,244 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- paan 的 Neovim 基本配置
+--
+-- 这个文件是声明式的：home.nix 的 programs.neovim.initLua 用
+-- builtins.readFile ./nvim/init.lua 读它，生成的 ~/.config/nvim/init.lua
+-- 是指向 /nix/store 的【只读软链】。
+--   * 改配置 = 改这个文件，然后：sudo nixos-rebuild switch --flake /etc/nixos#nixos
+--   * 插件同样由 Nix 提供（home.nix 的 programs.neovim.plugins），
+--     没有 lazy.nvim 之类的运行时插件管理器，不联网拉插件、不做 :TSInstall 现编。
+-- ═══════════════════════════════════════════════════════════════════════════
+
+local opt = vim.opt
+local map = vim.keymap.set
+
+-- ── 选项 ───────────────────────────────────────────────────────────────────
+vim.g.mapleader = " "
+
+opt.number = true             -- 行号
+opt.relativenumber = true     -- 相对行号（当前行显示绝对值）
+opt.mouse = "a"               -- 鼠标全模式可用
+opt.clipboard = "unnamedplus" -- 复制/粘贴走系统剪贴板（wl-clipboard 在 PATH 里）
+opt.termguicolors = true
+opt.signcolumn = "yes"        -- 固定留出标记列，避免开关标记时整屏横向抖动
+opt.cursorline = true
+opt.scrolloff = 6
+opt.sidescrolloff = 8
+opt.splitright = true
+opt.splitbelow = true
+opt.wrap = false
+opt.expandtab = true          -- 缩进用空格
+opt.tabstop = 4
+opt.shiftwidth = 4
+opt.softtabstop = 4
+opt.autoindent = true
+opt.smartindent = true
+opt.ignorecase = true
+opt.smartcase = true          -- 搜索里出现大写时自动区分大小写
+opt.incsearch = true
+opt.undofile = true           -- 关闭文件后仍可撤销（~/.local/state/nvim/undo）
+opt.swapfile = false
+opt.updatetime = 300
+opt.timeoutlen = 400
+opt.completeopt = "menuone,noselect"
+opt.laststatus = 3            -- 全局 statusline（配合顶部 bufferline 更像 IDE）
+opt.showmode = false          -- 模式交给 lualine 显示
+opt.confirm = true
+opt.pumheight = 10
+opt.winborder = "rounded"     -- 悬浮窗圆角边框
+
+-- nix / lua / 前端 / 配置文件统一 2 空格（其余语言按上面的 tabstop=4）
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = {
+    "nix", "lua", "yaml", "json", "jsonc", "toml", "html", "css", "scss",
+    "javascript", "typescript", "javascriptreact", "typescriptreact",
+    "vue", "markdown",
+  },
+  callback = function()
+    vim.bo.tabstop, vim.bo.shiftwidth, vim.bo.softtabstop = 2, 2, 2
+  end,
+})
+
+-- 关掉 netrw：目录浏览交给 neo-tree
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
+
+-- ── 颜色主题：跟随 Caelestia 的壁纸取色（用 catppuccin 那套键名）───────────
+-- 调色板由 Caelestia 从当前壁纸现算，渲染到
+--   ~/.local/state/caelestia/theme/catppuccin-overrides.lua
+-- （模板源文件 /etc/nixos/caelestia/catppuccin-overrides.lua，链路见那里的注释）。
+-- 文件不存在时（还没渲染过）退回 catppuccin 自带的 Mocha，所以不会没有配色。
+-- 换壁纸时 Caelestia 会重写这份文件，下面的 fs_event 监听会就地重载 —— 不用重开 nvim。
+local theme_dir = vim.fs.joinpath(vim.fn.expand("~"), ".local/state/caelestia/theme")
+local theme_file = "catppuccin-overrides.lua"
+
+-- 读那份渲染好的调色板；不存在或读不出就返回 nil（调用方退回 catppuccin 内置 Mocha）
+local function load_dyn_palette()
+  local path = vim.fs.joinpath(theme_dir, theme_file)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  f:close()
+  local ok, mod = pcall(dofile, path)
+  if ok and type(mod) == "table" and type(mod.palette) == "table" then
+    return mod
+  end
+  return nil
+end
+
+local function apply_theme()
+  local dyn = load_dyn_palette()
+  local flavour = (dyn and dyn.mode == "light") and "latte" or "mocha"
+  require("catppuccin").setup({
+    flavour = flavour,
+    -- color_overrides[flavour] 盖在 catppuccin 内置调色板上（vim.tbl_deep_extend 的 "keep"）
+    color_overrides = dyn and { [flavour] = dyn.palette } or {},
+    integrations = {
+      telescope = true,
+      neotree = true,
+      which_key = true,
+    },
+  })
+  -- 显式点名 flavour：setup() 可以重复调用（它每次都用新的 user_conf 覆盖 options 并按内容哈希决定要不要重编），
+  -- 所以换壁纸后直接重跑这一段就能就地换色。
+  vim.cmd.colorscheme("catppuccin-" .. flavour)
+end
+
+apply_theme()
+
+-- ── 换壁纸时自动跟随 ─────────────────────────────────────────────────────────
+-- Caelestia 每次换壁纸/换配色方案都会重写上面那份 lua；这里监听它的【目录】而不是文件本身：
+-- CLI 用 atomic rename 写（os.replace 换 inode），盯着文件路径会在第一次替换后跟丢。
+do
+  local handle = vim.uv.new_fs_event()
+  local debounce = vim.uv.new_timer()
+  if handle and debounce and vim.uv.fs_stat(theme_dir) then
+    vim.uv.fs_event_start(handle, theme_dir, {}, function(err, name)
+      if err or (name and name ~= theme_file) then
+        return -- 目录里其它文件（如 kitty.conf）动了与我们无关
+      end
+      -- 一次写入可能触发多个事件，合并到 200ms 之后再重载
+      debounce:start(200, 0, vim.schedule_wrap(apply_theme))
+    end)
+  end
+end
+
+-- ── Treesitter ────────────────────────────────────────────────────────────
+-- nvim 0.12 自带 c/lua/vim/vimdoc/query/markdown 的解析器与高亮；
+-- 其它语言（nix/python/go/ts/...）的解析器由 Nix 的 nvim-treesitter.withPlugins 提供。
+-- 注意：nvim 只对【自带】语言自动开高亮，nvim-treesitter 的 main 分支也只提供
+-- 解析器/查询（plugin/nvim-treesitter.lua 里只有 :TSInstall 这类命令），
+-- 所以按上游文档在 FileType 时自己 start 一次；已经开了的（自带语言）跳过。
+require("nvim-treesitter").setup({})
+vim.api.nvim_create_autocmd("FileType", {
+  callback = function(args)
+    local hl = vim.treesitter.highlighter
+    if hl and hl.active and hl.active[args.buf] then
+      return
+    end
+    pcall(vim.treesitter.start, args.buf)
+  end,
+})
+
+-- ── statusline：lualine ───────────────────────────────────────────────────
+-- theme = "auto" 按当前 colorscheme 现生成配色，因此自动跟随 catppuccin
+require("lualine").setup({
+  options = {
+    theme = "auto",
+    globalstatus = true,
+    section_separators = { left = "", right = "" },
+    component_separators = { left = "|", right = "|" },
+  },
+  sections = {
+    lualine_a = { "mode" },
+    lualine_b = { "branch", "diff", "diagnostics" },
+    lualine_c = { { "filename", path = 1 } },
+    lualine_x = { "filetype", "encoding", "fileformat" },
+    lualine_y = { "progress" },
+    lualine_z = { "location" },
+  },
+})
+
+-- ── 顶部标签栏：bufferline ─────────────────────────────────────────────────
+-- 配色用 catppuccin 自带的组件（上游文档指定的写法）
+require("bufferline").setup({
+  options = {
+    mode = "buffers",
+    show_close_icon = false,
+    separator_style = "thin",
+    always_show_bufferline = true,
+    offsets = {
+      { filetype = "neo-tree", text = "文件", text_align = "left", highlight = "Directory" },
+    },
+  },
+  highlights = require("catppuccin.special.bufferline").get_theme(),
+})
+map("n", "<S-l>", "<cmd>BufferLineCycleNext<cr>", { desc = "下一个 buffer" })
+map("n", "<S-h>", "<cmd>BufferLineCyclePrev<cr>", { desc = "上一个 buffer" })
+map("n", "<leader>bp", "<cmd>BufferLinePick<cr>", { desc = "跳转 buffer（按字母）" })
+map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "关闭 buffer" })
+map("n", "<leader>bo", "<cmd>BufferLineCloseOthers<cr>", { desc = "只留当前 buffer" })
+
+-- ── 文件浏览器：neo-tree（左侧树）─────────────────────────────────────────
+require("neo-tree").setup({
+  close_if_last_window = true,
+  popup_border_style = "rounded",
+  enable_git_status = true,
+  filesystem = {
+    filtered_items = { hide_dotfiles = false, hide_gitignored = false },
+    follow_current_file = { enabled = true }, -- 光标换文件时树自动定位
+  },
+  window = { width = 34 },
+  default_component_configs = {
+    indent = { with_expanders = true },
+  },
+})
+map("n", "<leader>e", "<cmd>Neotree toggle<cr>", { desc = "文件浏览器" })
+map("n", "<leader>E", "<cmd>Neotree reveal<cr>", { desc = "在浏览器中定位当前文件" })
+
+-- ── 查找：Telescope（搜文件用 fd、搜文本用 ripgrep，两个都在 PATH 里）──────
+require("telescope").setup({
+  defaults = {
+    path_display = { "smart" },
+    file_ignore_patterns = { "^%.git/" },
+    layout_strategy = "horizontal",
+  },
+  pickers = {
+    find_files = { hidden = true },
+  },
+})
+map("n", "<leader>ff", "<cmd>Telescope find_files<cr>", { desc = "查找文件" })
+map("n", "<leader>fg", "<cmd>Telescope live_grep<cr>", { desc = "全文搜索" })
+map("n", "<leader>fw", "<cmd>Telescope grep_string<cr>", { desc = "搜索光标下的单词" })
+map("n", "<leader>fb", "<cmd>Telescope buffers<cr>", { desc = "已打开的文件" })
+map("n", "<leader>fr", "<cmd>Telescope oldfiles<cr>", { desc = "最近打开过" })
+map("n", "<leader>fc", "<cmd>Telescope commands<cr>", { desc = "命令" })
+map("n", "<leader>fh", "<cmd>Telescope help_tags<cr>", { desc = "帮助文档" })
+
+-- ── 快捷键提示：which-key（按 <leader> 停一下会列出可用键）────────────────
+require("which-key").setup({ preset = "classic", delay = 300 })
+require("which-key").add({
+  { "<leader>b", group = "buffer" },
+  { "<leader>f", group = "查找" },
+})
+
+-- ── 常用快捷键 ────────────────────────────────────────────────────────────
+map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "清除搜索高亮" })
+map({ "n", "i", "v" }, "<C-s>", "<cmd>w<cr>", { desc = "保存" })
+map("n", "<leader>w", "<cmd>w<cr>", { desc = "保存" })
+map("n", "<leader>q", "<cmd>q<cr>", { desc = "退出" })
+-- 窗口之间跳转 / 调大小（Ctrl 系；SUPER+hjkl 归 Hyprland 管）
+map("n", "<C-h>", "<C-w>h", { desc = "左窗口" })
+map("n", "<C-j>", "<C-w>j", { desc = "下窗口" })
+map("n", "<C-k>", "<C-w>k", { desc = "上窗口" })
+map("n", "<C-l>", "<C-w>l", { desc = "右窗口" })
+map("n", "<C-Up>", "<cmd>resize +2<cr>", { desc = "窗口变高" })
+map("n", "<C-Down>", "<cmd>resize -2<cr>", { desc = "窗口变矮" })
+map("n", "<C-Left>", "<cmd>vertical resize -2<cr>", { desc = "窗口变窄" })
+map("n", "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "窗口变宽" })
+-- 缩进后保持选中；可视模式上下移动选中行
+map("v", "<", "<gv", { desc = "左缩进" })
+map("v", ">", ">gv", { desc = "右缩进" })
+map("v", "J", ":m '>+1<cr>gv=gv", { desc = "下移选中行" })
+map("v", "K", ":m '<-2<cr>gv=gv", { desc = "上移选中行" })

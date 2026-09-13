@@ -1,0 +1,548 @@
+/* 1. 隐藏toolbar 前进 后退按钮 */
+#back-button,
+#forward-button {
+    display: none !important;
+}
+
+/* 移除toolbar右键菜单 所有分割线 */
+#toolbar-context-menu menuseparator {
+    display: none !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/* 2. 隐藏 网页 右键菜单 顶部项(后退/前进/刷新/收藏) */
+#context-navigation,
+#context-sep-navigation {
+    display: none !important;
+}
+
+/* 3. 隐藏网页右键菜单其他各项 */
+#context-savepage,
+/* 另存为 */
+#context-selectall,
+/* 全选 */
+#context-take-screenshot,
+/* 截图 */
+#context-viewsource,
+/* 查看源代码 */
+#context-inspect-a11y,
+/* 检查无障碍属性 */
+#context-inspect,
+/* 检查元素 */
+#context-sendpagetodevice {
+    /* 发送到设备 */
+    display: none !important;
+}
+
+/* 隐藏 AdGuard 右键菜单项 */
+#menu_adguard_adblocker-menuitem,
+menu[label="AdGuard AdBlocker"] {
+    display: none !important;
+}
+
+/* 隐藏选定文本后的 Copy 项 */
+/* 注意：这会隐藏原生右键菜单里的“复制” */
+#context-copy,
+menuitem[label="Copy ❌"],
+menuitem[accesskey="C"] {
+    display: none !important;
+}
+
+/* 4. 关键：干掉剩下的所有分隔线 */
+/* 如果你想暴力隐藏右键菜单里“所有”横线 */
+#contentAreaContextMenu menuseparator {
+    display: none !important;
+}
+
+/* 或者只隐藏特定位置的线 (如果你想保留插件下方的线) */
+/* #context-sep-selectall, #context-sep-viewsource, #context-sep-maybe_screenshot { display: none !important; } */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+
+/* ============================================================ */
+/* 1️⃣ 隐藏顶部 Tab 栏 (暴力级隐藏，防止失效) */
+/* ============================================================ */
+#TabsToolbar {
+    display: none !important;
+    visibility: collapse !important;
+}
+
+/* ============================================================ */
+/* 2️⃣ 逻辑层：Sidebar 命脉 (保持 DOM 存在但不显示图标) */
+/* ============================================================ */
+#sidebar-button {
+    width: 0px !important;
+    margin: 0px !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* ============================================================ */
+/* 3️⃣ 【核心还原】复活原生分割线 (参照 Bitwarden 图的效果) */
+/* ============================================================ */
+
+#sidebar-splitter {
+    /* 1. 恢复显示 */
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+
+    /* 2. 还原物理间隔：Firefox 原生 splitter 约为 4px 到 5px 宽 */
+    width: 4px !important;
+
+    /* 3. 还原视觉：不要 appearance: none，让它继承主题的分割线外观 */
+    /* 如果你的主题导致它看不见，可以手动取消下面 background 的注释 */
+    /* background-color: rgba(0, 0, 0, 0.05) !important; */
+
+    border: none !important;
+
+    /* 4. 恢复交互逻辑 */
+    pointer-events: auto !important;
+    cursor: col-resize !important;
+
+    /* 5. 确保它夹在侧边栏和网页中间，不要有负边距 */
+    margin: 0 !important;
+}
+
+/* ============================================================ */
+/* 4️⃣ 侧边栏布局：垂直图标栏 + TST 无缝连接 */
+/* ============================================================ */
+
+/* 强制左侧图标纵向排列 */
+#sidebar-main toolbar {
+    flex-direction: column !important;
+    width: 44px !important;
+    background: transparent !important;
+}
+
+/* 隐藏图标栏与 TST 之间的那根线，实现你说的“左侧这一坨是一体的” */
+#sidebar-tools-and-extensions-splitter {
+    display: none !important;
+}
+
+/* 移除 TST 顶部多余 Header */
+#sidebar-header,
+#vertical-tabs {
+    display: none !important;
+}
+
+/* 确保内部容器横向排布：[图标栏][TST] */
+#sidebar-main {
+    flex-direction: row !important;
+}
+
+/* 彻底杀掉那个顽固的 Pinned Tab 分隔条 (水平线) */
+.vertical-tabs-pinned-tabs-separator,
+#vertical-tabs-pinned-tabs-separator {
+    display: none !important;
+    height: 0 !important;
+}
+
+/* ============================================================ */
+/* 5️⃣ 清理右键菜单 (防止误触重置状态) */
+/* ============================================================ */
+#toolbar-context-toggle-vertical-tabs,
+#context_toggleVerticalTabs,
+#tabbarItemsMenuSeparator {
+    display: none !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ============================================================ */
+/*                   隐藏sidebar最上方的header                    */
+/* ============================================================ */
+
+/* 1. 直接抹除自定义组件容器 */
+sidebar-panel-header,
+html-sidebar-panel-header,
+[id="sidebar-panel-header"] {
+    display: none !important;
+    visibility: collapse !important;
+    height: 0 !important;
+    overflow: hidden !important;
+}
+
+/* 2. 针对截图中的特定 ID 进行二次保险 */
+#sidebar-panel-header {
+    display: none !important;
+}
+
+/* 3. 修正侧边栏内容区可能出现的顶部留白 */
+#sidebar-box {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+/* 4. 如果 Bitwarden 等扩展面板还有残留高度，强制压缩栈容器 */
+#webext-panels-stack {
+    margin-top: 0 !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/* ============================================================ */
+/* 修正：只干掉左侧分割线，确保右侧（网页间隙）存活 */
+/* ============================================================ */
+
+/* 1. 精确打击左侧：垂直标签栏与侧边栏之间的分割线 */
+#sidebar-launcher-splitter {
+    display: none !important;
+    visibility: collapse !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    border: none !important;
+    opacity: 0 !important;
+}
+
+/* 2. 移除万恶之源：确保不再全局隐藏 .sidebar-splitter */
+/* 注意：不要在 userChrome.css 任何地方写 .sidebar-splitter { display: none } */
+/* 因为 #sidebar-splitter 往往也带有这个类名 */
+
+/* 3. 再次强行加固右侧：侧边栏与网页主区域的分隔条 */
+#sidebar-splitter {
+    display: flex !important;
+    visibility: visible !important;
+    width: 4px !important;
+    /* 这里控制你想要的间隙宽度 */
+    background-color: transparent !important;
+    /* 设为透明，但保留物理占位 */
+    pointer-events: auto !important;
+    cursor: col-resize !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* --- firefox原生tab栏右键菜单精简 --- */
+
+/* 1. 隐藏 New Tab Below (在下方新建标签页) */
+#tabContextMenu #context_openTabBelow,
+#tabContextMenu menuitem[label="New Tab Below"] {
+    display: none !important;
+}
+
+/* 2. 隐藏 Move Tab (移动标签页级联菜单) */
+#tabContextMenu #context_moveTab,
+#tabContextMenu menu[label="Move Tab"] {
+    display: none !important;
+}
+
+/* 3. 隐藏 Share (分享) */
+#tabContextMenu #context_shareTab,
+#tabContextMenu menuitem[label="Share"] {
+    display: none !important;
+}
+
+/* --- 额外保险：如果你想把所有红叉项一次性清空 --- */
+#tabContextMenu #context_reloadTab,
+/* 重新加载 */
+#tabContextMenu #context_toggleMuteTab,
+/* 静音 */
+#tabContextMenu #context_unloadTab,
+/* 卸载 */
+#tabContextMenu #context_bookmarkTab,
+/* 书签 */
+#tabContextMenu #context_sendTabToDevice,
+/* 发送到设备 */
+#tabContextMenu #context_closeTab,
+/* 关闭 */
+#tabContextMenu #context_closeDuplicateTabs,
+/* 关闭重复 */
+#tabContextMenu #context_closeTabOptions
+
+/* 关闭多个 */
+    {
+    display: none !important;
+}
+
+#tabContextMenu menuseparator {
+    display: none !important;
+}
+
+
+
+
+
+
+
+
+
+/* 隐藏 TST 右键菜单项 */
+/* 1. 隐藏 New Tab Below */
+#context-menu-newTabBelow,
+menuitem[label="New Tab Below"],
+menuitem[label="新建下方标签页"],
+/* 2. 隐藏 Move Tab 级联菜单 */
+#context-menu-moveTab,
+menu[label="Move Tab"],
+menu[label="移动标签页"],
+/* 3. 隐藏 Send Tab to Device */
+#context-menu-sendTabToDevice,
+#context-sendtab-to-device,
+menu[label="Send Tab to Device"],
+/* 4. 隐藏 Close Duplicate Tabs */
+#context-menu-closeDuplicateTabs,
+menuitem[label="Close Duplicate Tabs"],
+menuitem[label="关闭重复标签页"],
+/* 5. 隐藏 Close Multiple Tabs */
+#context-menu-closeMultipleTabs,
+menu[label="Close Multiple Tabs"],
+menu[label="关闭多个标签页"] {
+    display: none !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+/* 隐藏书签菜单底部的“在标签页中全部打开” */
+.openintabs-menuitem,
+.bookmarks-actions-menuseparator {
+    display: none !important;
+}
+
+/* 隐藏书签工具栏文件夹下的“在标签页中全部打开” */
+.library-button-menuitem[command="PlacesCommand_openLinksInTabs"],
+menuitem[id^="placesContext_openLinksInTabs"] {
+    display: none !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* 彻底隐藏toolbar的主菜单（汉堡菜单）按钮 */
+#PanelUI-menu-button {
+    display: none !important;
+}
+
+
+
+/* --- 隐藏toolbar的Overflow Menu的内容  --- */
+/* 隐藏底部的 自定义工具栏 (Customize toolbar...) */
+/*#overflowMenu-customize-button {
+    display: none !important;
+}
+
+/* 隐藏溢出菜单的分割线 */
+#widget-overflow-mainView toolbarseparator {
+    display: none !important;
+}
+
+
+
+/* --- 隐藏toolbar的developer的内容  --- */
+/* 彻底隐藏开发工具面板中的任务管理器 */
+#PanelUI-developer-tools-view toolbarbutton[command="View:AboutProcesses"],
+#PanelUI-developer-tools-view toolbarbutton[key="key_aboutProcesses"],
+toolbarbutton.subviewbutton[command="View:AboutProcesses"] {
+    display: none !important;
+}
+
+/* 彻底隐藏开发工具面板中的滴管 */
+#PanelUI-developer-tools-view toolbarbutton[label="Eyedropper"],
+toolbarbutton.subviewbutton[label="Eyedropper"] {
+    display: none !important;
+}
+
+
+
+/* --- 隐藏toolbar的Extensions的内容  --- */
+/* 2. 隐藏扩展面板顶部的 "Extensions" 标题栏 */
+#unified-extensions-view .panel-header,
+#unified-extensions-view .panel-header+toolbarseparator {
+    display: none !important;
+}
+
+/* 3. 隐藏扩展面板底部的 "Manage extensions" 按钮 */
+/*#unified-extensions-manage-extensions {
+    display: none !important;
+}
+/* 4. 删掉面板内所有的分割线 */
+#unified-extensions-view toolbarseparator,
+#appMenu-mainView toolbarseparator {
+    display: none !important;
+}
+
+/* 隐藏不必要的说明文字，只保留标题 */
+.unified-extensions-item-message-deck {
+    display: none !important;
+}
+
+
+
+/* --- 修改toolbar的Extensions的样式 --- */
+/* 1. 压缩每一行的外层容器 */
+#unified-extensions-view .unified-extensions-item-row-wrapper {
+    margin-block: -2px !important;
+    /* 通过负边距强制靠拢 */
+}
+
+/* 2. 核心：压缩扩展按钮本体 (对应你截图中蓝色的部分) */
+#unified-extensions-view .unified-extensions-item-action-button {
+    padding-inline: 4px !important;
+    padding-block: 0 !important;
+    margin: 0 !important;
+    min-height: 24px !important;
+    /* 收藏栏高度 */
+}
+
+/* 3. 压缩右侧的设置按钮 (那个三个点/齿轮按钮) */
+#unified-extensions-view .unified-extensions-item-menu-button {
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 24px !important;
+    min-width: 24px !important;
+}
+
+/* 4. 强制缩小图标尺寸 */
+#unified-extensions-view .unified-extensions-item-action-button .toolbarbutton-icon {
+    width: 16px !important;
+    height: 16px !important;
+}
+
+/* 5. 调整文字大小和间距 */
+#unified-extensions-view .unified-extensions-item-action-button .toolbarbutton-text {
+    font-size: 12px !important;
+    padding-inline-start: 4px !important;
+}
+
+/* 6. 消除面板整体的内边距，让内容填满空间 */
+#unified-extensions-view .panel-subview-body {
+    padding: 2px 0 !important;
+}
+
+/* 7. 让底部那个巨大的 "Manage extensions" 也变细 */
+#unified-extensions-manage-extensions {
+    padding-block: 0 !important;
+    min-height: 24px !important;
+    font-size: 11px !important;
+}
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,528 @@
+{ pkgs, inputs, ... }:
+
+{
+  imports = [ inputs.caelestia-shell.homeManagerModules.default ];
+
+  home.username = "paan";
+  home.homeDirectory = "/home/paan";
+  home.stateVersion = "26.05";
+
+  programs.home-manager.enable = true;
+
+  # ═══════════════════ 桌面外壳：Caelestia ═══════════════════
+  # 状态栏 / 通知 / 启动器 / 仪表盘 / 锁屏 / 截图 / 剪贴板 全由它提供，
+  # 由 home-manager 生成 systemd 用户服务（caelestia.service），不需要在 hyprland.lua 里 exec。
+  # cli.enable 会把 Caelestia CLI 装进 PATH，同时带进它要求的依赖
+  # （grim/slurp/swappy/fuzzel/cliphist/gpu-screen-recorder/libnotify 等）。
+  programs.caelestia = {
+    enable = true;
+    cli.enable = true;
+
+    # ── 第三方壁纸守护进程：awww（就是 swww 改名后的版本）──
+    # 水滴式过渡挂在 Caelestia CLI 官方的 wallpaper.postHook 上：每次切壁纸
+    # （Nexus/启动器里点、`caelestia wallpaper -f/-r`）都会执行这条命令，并把
+    # WALLPAPER_PATH / SCHEME_COLOURS / THUMBNAIL_PATH 作为环境变量传进来。
+    # monet 取色不受影响：取色是 `caelestia wallpaper -f` 这个 CLI 自己做的
+    # （算完写 state/scheme.json，外壳只读那个文件），跟谁把图铺到屏幕上无关。
+    #   --transition-type grow  从一点长出圆（水滴涟漪；outer 是反向收缩）
+    #   --transition-pos        圆心，取鼠标位置 → 「点哪就从哪扩散」
+    #   --invert-y              它的 y 从底边算，hyprctl cursorpos 从顶边算；
+    #                           注意它是**开关**，写 `--invert-y true` 会把 true 当成图片路径报错
+    # 注意 postHook 走 shell=True 且 stderr 被丢弃：命令写错不报错，只是没效果。
+    cli.settings.wallpaper.postHook = "awww img \"$WALLPAPER_PATH\" --transition-type grow --transition-pos \"$(hyprctl cursorpos | tr -d ' ')\" --invert-y --transition-duration 1 --transition-fps 60";
+
+    # 声明式接管外壳设置 → ~/.config/caelestia/shell.json 由 home-manager 拥有。
+    # 代价：在 Caelestia 的图形设置界面里改的东西不会持久化（那文件现在是 store 软链），
+    # 要改外壳设置就改这里再 rebuild —— 这正是「一切可回滚复现」的代价与好处。
+    settings = {
+      # 壁纸交给第三方守护进程 awww 画（2026-09-13）。关掉这个开关后，外壳那个全屏
+      # background 层会从 WlrLayer.Background 降到 WlrLayer.Bottom、颜色设成 transparent，
+      # 自己的 Wallpaper{} Loader 也不再实例化（Background.qml:22-23 与 :48）——这正是上游
+      # 给「用 swww 之类程序接管壁纸」留的口子，层序 background < bottom < 窗口，不会打架。
+      # 代价：Nexus 里那个 "Wallpapers" 网格按钮会变灰（WallpaperAndStyle.qml:157 用同一个
+      # 开关做 disabled 判据）。壁纸改从启动器搜 wallpapers 换，或 `caelestia wallpaper -f/-r`；
+      # 锁屏不受影响（lock/LockSurface.qml 自己渲染 Wallpapers.current）。
+      background.wallpaperEnabled = false;
+      appearance.transparency.enabled = false; # 想要毛玻璃改 true
+      general.apps = {
+        terminal = [ "kitty" ];
+        explorer = [ "yazi" ];
+      };
+      # Caelestia 上游默认的 idle 表就是三条：
+      #   { timeout = 180; idleAction = "lock"; }
+      #   { timeout = 300; idleAction = "dpms off"; returnAction = "dpms on"; }
+      #   { timeout = 600; idleAction = ["suspendThenHibernate"]; }   ← 本机必须去掉
+      # 第三条是致命项：这是台 PVE 虚机，进 s2idle 后没有唤醒源 = 永久假死（内存不释放、
+      # 核显无输出、网络不通，只能在 PVE 控制台硬重启）。所以照抄上游前两条、去掉第三条，
+      # 另有 configuration.nix 里的 systemd.sleep 硬闸兜底。
+      # 历史：2026-09-11 之前为了"当串流主机时锁屏会让串流断开"把第一条（自动锁屏）删了；
+      # 现在这台机器不再当串流主机（见 configuration.nix 里 services.sunshine 那段说明），
+      # 自动锁屏已按上游默认恢复。
+      general.idle.timeouts = [
+        # 空闲 3 分钟自动锁屏（Caelestia 自带锁屏，动一下键鼠就回桌面）。
+        { timeout = 180; idleAction = "lock"; }
+        # 空闲 5 分钟熄屏。注意：如果屏幕全黑**且键盘没反应**，多半不是熄屏，而是
+        # **活动 VT 被切走**（图形会话在 tty1、屏幕却在 tty3 → Hyprland 失去 DRM master
+        # 后停止渲染）：按 Ctrl+Alt+F1，或从 ssh 执行 `sudo chvt 1` 恢复。
+        # 真熄屏的唤醒方式：hyprctl dispatch 'hl.dsp.dpms({action="on"})'
+        { timeout = 300; idleAction = "dpms off"; returnAction = "dpms on"; }
+      ];
+      services = {
+        dataUnits = "Decimal";
+        useTwelveHourClock = false;
+      };
+      # 锁屏背景用壁纸，不要用 screencopy 截屏：本机屏幕是内核 EDID 假负载出来的
+      # （叠加 Sunshine 自身还在 screencopy），锁屏时截屏会让 quickshell 的
+      # Wayland 连接报 "invalid object" 直接挂掉，Hyprland 随后弹 lockscreen app died。
+      # 见 caelestia-dots/shell#1814。视觉上仍是壁纸+模糊，一样好看。
+      lock.useWallpaper = true;
+      # 顶栏仪表盘弹层精简（2026-09-12 用户要求）：去掉 Dashboard 与 Weather 两个标签页，
+      # 只留 Media / Performance。标签页内部的 用户卡/时钟/日历/资源环 上游没有单独开关，
+      # 要关必须改 QML（重建 shell），所以这里只做到「关标签页」这一层。
+      dashboard.showDashboard = false;
+      dashboard.showWeather = false;
+      # 左侧竖栏改成非常驻（2026-09-12 用户要求）：Caelestia 1.0 的 bar 是屏幕**左侧竖栏**，
+      # 上游默认 bar.persistent=true 会一直显示并占位。设 false 后它平时缩回左边框，鼠标贴到
+      # 屏幕最左侧约 10px（= border.thickness）才滑出，鼠标一离开就缩回 —— 和 dashboard /
+      # sidebar / utilities 那些贴边面板的手感一致（bar.showOnHover 上游默认 true，不用显式设）。
+      # 代价：它不再占位（exclusive zone 退回边框宽度），最大化窗口会一直铺到屏幕左缘，栏滑出时
+      # 浮在窗口之上。想临时钉住：把鼠标挪到左边框后按住左键向右拖 >20px（bar.dragThreshold）；
+      # 向左拖回则取消钉住。上游没有「点图标切换」或快捷键可切，只有这个拖拽手势。
+      bar.persistent = false;
+      # 竖栏里的元素清单（2026-09-13 用户要求）：左上角的发行版图标（NixOS 雪花）与竖栏正中的
+      # 「当前窗口图标 + 竖排标题」都关掉。两者分别是 entries 里的 logo 与 activeWindow。
+      # ⚠️ 这是**整份清单替换上游默认值**，不是逐条覆盖：设置框架里 list 型选项一旦在 JSON 里
+      # 出现就整体接管（plugin/src/Caelestia/Settings/listnode.cpp 的 syncJson → setValue("values")，
+      # 且被覆盖后的元素不再有 fallback），所以必须把上游默认的九条按原顺序写全，只改 enabled。
+      # 上游默认见 plugin/src/Caelestia/Config/barconfig.hpp 的 CONFIG_LIST(EntryList, entries, …)：
+      #   logo, workspaces, spacer, activeWindow, spacer, tray, clock, statusIcons, power
+      # 两个 spacer 是 Layout.fillHeight（占满剩余空间），作用是把 workspaces 顶在上方、
+      # 把 tray/clock/statusIcons/power 压到底部；关掉 activeWindow 后中间那块就空出来。
+      # 想恢复某一项：把它那行 enabled 改回 true；想彻底交还给上游默认：整段删掉再 rebuild。
+      # 副作用：以后上游若新增/改名条目，这份清单不会自动跟着变（默认清单被覆盖了）。
+      bar.entries = [
+        { id = "logo"; enabled = false; }
+        { id = "workspaces"; enabled = true; }
+        { id = "spacer"; enabled = true; }
+        { id = "activeWindow"; enabled = false; }
+        { id = "spacer"; enabled = true; }
+        { id = "tray"; enabled = true; }
+        { id = "clock"; enabled = true; }
+        { id = "statusIcons"; enabled = true; }
+        { id = "power"; enabled = true; }
+      ];
+      # 工作区指示器显示 10 个（上游默认 5，2026-09-13 用户要求）—— 就是竖栏里那串圆角小胶囊，
+      # 点击/滚轮都作用在它上面，配合 hyprland.lua 里 SUPER+1..0 的十个工作区绑定。
+      # 图形界面里对应 Nexus → Panels → Workspaces → "Shown"（1..20），但界面里存不下来（只读）。
+      bar.workspaces.shown = 10;
+      # 启动器 fuzzy search 五项全开（2026-09-12）。上游默认五项都是 false（走 fzf 的精确/前缀匹配），
+      # 打开后列表改用模糊匹配：apps / actions / schemes / variants / wallpapers。
+      # 依据：LauncherPanel.qml 的 "Fuzzy search" 分区就是这五项，写 GlobalConfig.launcher.useFuzzy.*；
+      # 列表侧分别在 launcher/services/{Apps,Actions,Schemes,M3Variants}.qml 与 services/Wallpapers.qml
+      # 读同一个 key。注意：Nexus 设置界面里点这些开关存不下来（shell.json 是 store 软链只读），
+      # 界面里的改动只在当次运行期生效，所以必须写在这里。
+      launcher.useFuzzy = {
+        apps = true;
+        actions = true;
+        schemes = true;
+        variants = true;
+        wallpapers = true;
+      };
+    };
+  };
+
+  # ═══════════════ 终端：kitty（配色跟随 Caelestia 的壁纸取色）══════════════════
+  # 配色不在这里写死，而是由 Caelestia 从当前壁纸现算，渲染到
+  #   ~/.local/state/caelestia/theme/kitty.conf
+  # 再用 kitty 自己的 include 引进来（settings 里那一行）。整条链路：
+  #   模板源文件 /etc/nixos/caelestia/kitty.conf
+  #     → HM 复制到 ~/.config/caelestia/templates/kitty.conf（见下面的 xdg.configFile）
+  #     → 换壁纸 / `caelestia scheme set` 时，Caelestia 的 CLI 用它自带的
+  #       user-template 机制（apply_user_templates）把模板用当前配色重渲染一遍
+  #     → kitty 读 include，新开的窗口就是新配色
+  # 以前的问题：Caelestia 只会往已经开着的终端推 OSC 序列（即时变色），
+  # 而新开的窗口又回去读这里写死的 Catppuccin —— 于是「有的窗口动态、有的静态」。
+  # 现在两条路用的是同一组颜色（模板里的键就是照那份 OSC 序列挑的：surface/onSurface/
+  # secondary/term0..15），不会互相打架。
+  # 想退回静态配色：把 include 那行换成备份 home.nix.bak-20260913-caelestia-colours
+  # 里那批 background/color0..15 键，并删掉 ~/.config/caelestia/templates/ 下那两份。
+  programs.kitty = {
+    enable = true;
+    settings = {
+      # 字号（2026-09-13 按用户要求调小）：kitty 没有"整体缩放比例"选项，
+      # 控制文字大小的就是这个 font_size，默认 11.0 pt → 现在 10.0。
+      # 想再调：改这里的数字再 rebuild；临时看效果可在窗口里按 Ctrl+Shift+加/减缩放（不落盘）。
+      font_size = 10.0;
+      # 光标拖尾（2026-09-12 起，用户要 neovide 那种观感；kitty 没有平滑滑行/粒子，
+      # cursor_trail 是官方唯一对应特效）：
+      #   300  = 光标在一位停留 >300ms 后的移动才启动拖尾（默认 0 = 关）
+      #   decay "0.15 0.6" = 残影最快/最慢衰减秒数（默认 "0.1 0.4"，调大＝拖尾更长）
+      #   start_threshold 1 = 横/纵每移动一格都触发（默认 2）
+      # 颜色沿用 cursor_trail_color 默认 none ＝ 光标背景色（现在也跟着配色变）
+      cursor_trail = 300;
+      cursor_trail_decay = "0.15 0.6";
+      cursor_trail_start_threshold = 1;
+      # 颜色全部来自 Caelestia 渲染出来的那份（链路见上面注释）。
+      # 这里已不写任何颜色键，所以不用担心 include 之间的覆盖顺序。
+      # kitty 会把 include 的路径做 ~ 展开；文件缺失时只记一条日志、不会报错停用配置。
+      include = "~/.local/state/caelestia/theme/kitty.conf";
+    };
+  };
+
+  # ═══════════════════ 编辑器：Neovim ═══════════════════
+  # 插件全部来自 nixpkgs（下面的 plugins 列表），没有 lazy.nvim 这类运行时插件管理器：
+  # 装插件 = 改列表 + rebuild（不联网拉插件、不在 ~/.local/share/nvim 里落野插件），
+  # 卸插件 = 从列表里删掉一行。解析器也一样由 Nix 提供，不做 `:TSInstall` 现编。
+  #
+  # 配置本体在 /etc/nixos/nvim/init.lua（同目录），initLua 把它读进来生成
+  # ~/.config/nvim/init.lua —— 那份是指向 /nix/store 的只读软链，别直接改。
+  #
+  # EDITOR/VISUAL（= nvim）与 vi/vim 别名由下面三项提供。这几项以前在
+  # configuration.nix 的 programs.neovim 里，2026-09-13 挪到这里，跟插件和配置放一起；
+  # configuration.nix 的 environment.systemPackages 里仍留着裸 `neovim`，
+  # 那样 root/其它用户（含 sudo nvim）也有编辑器可用。
+  programs.neovim = {
+    enable = true;
+    defaultEditor = true;
+    viAlias = true;
+    vimAlias = true;
+
+    plugins = with pkgs.vimPlugins; [
+      catppuccin-nvim # 颜色主题（Mocha，与 kitty 的配色是同一套）
+      lualine-nvim # statusline
+      bufferline-nvim # 顶部 buffer 标签栏
+      nvim-web-devicons # 上面两个插件的文件类型图标（字体：本机 monospace = JetBrainsMono Nerd Font）
+      neo-tree-nvim # 文件浏览器（左侧树）
+      plenary-nvim # telescope 的依赖
+      telescope-nvim # 查找：文件 / 全文（用 PATH 里的 fd、ripgrep）
+      which-key-nvim # 按 <leader> 后弹出可用快捷键
+      # Treesitter 的解析器（语法高亮/结构化解析）。nvim 0.12 自带
+      # c/lua/vim/vimdoc/query/markdown 的解析器，这里补常用语言。
+      (nvim-treesitter.withPlugins (
+        p: [
+          p.nix
+          p.lua
+          p.bash
+          p.python
+          p.json
+          p.yaml
+          p.toml
+          p.markdown
+          p.markdown_inline
+          p.c
+          p.cpp
+          p.go
+          p.rust
+          p.javascript
+          p.typescript
+          p.html
+          p.css
+          p.diff
+          p.gitignore
+          p.regex
+          p.vim
+          p.vimdoc
+          p.query
+        ]
+      ))
+    ];
+
+    initLua = builtins.readFile ./nvim/init.lua;
+  };
+
+  # ═══════════════════ 终端文件管理器：yazi / superfile ═══════════════════
+  # 两个都声明「默认显示 dotfile」，但机制不一样（原因写在各段注释里）。
+  #
+  # yazi：上游有正式配置项，段名是 `[mgr]`（25.x 起由 `[manager]` 改名而来；
+  # 写成 `[manager]` 不会报错、会被静默忽略 —— dotfile 依旧隐藏，2026-09-13 踩过）。
+  # package = null =【不装第二份 yazi】：系统里那份来自 configuration.nix 的
+  # environment.systemPackages，这个模块只负责生成 ~/.config/yazi/yazi.toml
+  # （yazi 会把它和内置默认值合并，所以只写改动的那一项）。
+  # enableZshIntegration 显式关掉：模块默认会往 zsh 里加一个 y 包装函数
+  # （退出 yazi 后 cd 到最后浏览的目录），保持 shell 干净；想要就说一声。
+  programs.yazi = {
+    enable = true;
+    package = null;
+    enableZshIntegration = false;
+    settings.mgr.show_hidden = true;
+  };
+
+  # superfile（1.3.3）：上游【没有】这个配置项 —— 配置模板里压根没有 hidden/dotfile
+  # 相关键，只有一个热键（默认 `.`）用来切换；可见性状态记在数据目录的文件里，
+  # 启动时按它决定：~/.local/share/superfile/toggleDotFile，内容就是 true / false。
+  # 所以这里直接声明那个状态文件的初始值。
+  # 实测：true 时列表里有 .zshrc/.config，false 时没有。
+  # 代价：在 superfile 里按 `.` 切换时，这个文件是 /nix/store 只读软链、写不进去
+  # （只在 ~/.local/state/superfile/superfile.log 记一条），下次启动仍按声明值
+  # = 恒为显示 dotfile。想保留「切一次永久记住」的语义，就把下面这行删掉。
+  xdg.dataFile."superfile/toggleDotFile".text = "true";
+
+  # ═══════════════════ 浏览器：LibreWolf ═══════════════════
+  # 包从 configuration.nix 挪到这里，跟 profile / 自定义 CSS / 设置一起由 home-manager 管。
+  #
+  # 这个 profile 分两层，别混淆：
+  #   * 声明层（进 /nix/store，随 generation 回滚）：settings → profile 的 user.js、
+  #     userChrome → chrome/userChrome.css、profiles.ini 与 profile 名，全由本文件生成。
+  #     代价：settings 里的项每次启动强制生效（about:config 改不动），要改就改这里再 rebuild。
+  #   * 数据层（不可声明、不随回滚、要自己备份）：cookies、登录态、tab/session、
+  #     扩展本体与扩展数据、书签密码等，是 ~/.librewolf/default/ 里的普通文件，
+  #     2026-09-11 从 Windows 侧 LibreWolf 155 挑选后搬来（只搬数据，没搬缓存/遥测）。
+  #     备份做法：tar 一份 ~/.librewolf/default 即可（没有 nix 层面的自动回滚兜底）。
+  #
+  # 用 nixpkgs-unstable 的包：26.05 稳定版是 154，而 Windows 那份 profile 是 155 写的，
+  # 版本降级会触发 places/cookies 的「数据库来自更新版本」保护（书签历史直接不可用、
+  # cookies 有被弃用的风险），所以直接对齐 Windows 的 155.0.1-1。
+  programs.librewolf = {
+    enable = true;
+    package = inputs.nixpkgs-unstable.legacyPackages.${pkgs.stdenv.hostPlatform.system}.librewolf;
+
+    profiles.default = {
+      id = 0;
+      isDefault = true;
+
+      settings = {
+        "toolkit.legacyUserProfileCustomizations.stylesheets" = true; # 让下面的 userChrome 生效
+        "browser.startup.homepage" = "https://google.com";
+        "browser.startup.page" = 3; # 启动恢复上次会话（tab 全靠这条）
+        # 崩溃/异常退出（VM 重启、被 kill）后也自动恢复会话，而不是默默丢掉。
+        # 原 profile 里这条是 false（Firefox/LibreWolf 默认），后果是：只要上次不是"点关闭
+        # 正常退出"，recovery.jsonlz4 就一直躺在那儿没人用，打开就是空窗口。
+        "browser.sessionstore.resume_from_crash" = true;
+        "browser.sessionstore.max_tabs_undo" = 9999;
+        "browser.sessionstore.restore_on_demand" = true;
+        "browser.sessionstore.restore_tabs_lazily" = true;
+        "browser.tabs.warnOnClose" = true;
+        "browser.sessionstore.warnOnQuit" = true;
+        "browser.warnOnQuit" = true;
+        "browser.warnOnQuitShortcut" = true;
+        # 顶部工具栏的自定义布局（Firefox 的 browser.uiCustomization.state）。
+        # 2026-09-12 从 ~/.librewolf/default/prefs.js 读出后固化在这里。
+        # 代价（和别的 settings 一样）：以后在界面上拖按钮/加弹簧，下次启动会被这条声明覆盖回去；
+        # 想改布局就改完告我一声（或自己改这里）再 rebuild。
+        "browser.uiCustomization.state" = ''
+          {
+            "currentVersion": 26,
+            "dirtyAreaCache": [
+              "nav-bar",
+              "vertical-tabs",
+              "PersonalToolbar",
+              "TabsToolbar",
+              "widget-overflow-fixed-list",
+              "unified-extensions-area",
+              "toolbar-menubar"
+            ],
+            "newElementCount": 135,
+            "placements": {
+              "PersonalToolbar": [],
+              "TabsToolbar": [
+                "tabbrowser-tabs",
+                "new-tab-button"
+              ],
+              "nav-bar": [
+                "sidebar-button",
+                "personal-bookmarks",
+                "customizableui-special-spring123",
+                "customizableui-special-spring124",
+                "customizableui-special-spring130",
+                "customizableui-special-spring132",
+                "customizableui-special-spring133",
+                "urlbar-container",
+                "customizableui-special-spring131",
+                "customizableui-special-spring129",
+                "customizableui-special-spring128",
+                "customizableui-special-spring127",
+                "customizableui-special-spring126",
+                "customizableui-special-spring125",
+                "_testpilot-containers-browser-action",
+                "developer-button",
+                "unified-extensions-button",
+                "vertical-spacer",
+                "forward-button",
+                "back-button"
+              ],
+              "toolbar-menubar": [
+                "menubar-items"
+              ],
+              "unified-extensions-area": [
+                "mozilla_cc3_internetdownloadmanager_com-browser-action",
+                "chrome-mask_overengineer_dev-browser-action",
+                "firefox_ghostery_com-browser-action",
+                "_3c078156-979c-498b-8990-85f7987dd929_-browser-action",
+                "gemini-voyager_nagi-ovo-browser-action",
+                "_74145f27-f039-47ce-a470-a662b129930a_-browser-action",
+                "adguardadblocker_adguard_com-browser-action",
+                "_3c6bf0cc-3ae2-42fb-9993-0d33104fdcaf_-browser-action",
+                "sponsorblocker_ajay_app-browser-action",
+                "_5efceaa7-f3a2-4e59-a54b-85319448e305_-browser-action",
+                "ublock0_raymondhill_net-browser-action",
+                "firefox_tampermonkey_net-browser-action",
+                "_a6c4a591-f1b2-4f03-b3ff-767e5bedf4e7_-browser-action",
+                "canvasblocker_kkapsner_de-browser-action",
+                "jid1-5fs7itlscuazbgwr_jetpack-browser-action",
+                "_9ce99d37-4a5e-409a-a04b-0f3f50491bc7_-browser-action",
+                "newtaboverride_agenedia_com-browser-action",
+                "_36bdf805-c6f2-4f41-94d2-9b646342c1dc_-browser-action",
+                "_c3c10168-4186-445c-9c5b-63f12b8e2c87_-browser-action",
+                "_a4c4eda4-fb84-4a84-b4a1-f7c1cbf2a1ad_-browser-action",
+                "_762f9885-5a13-4abd-9c77-433dcd38b8fd_-browser-action",
+                "_b9acf540-acba-11e1-8ccb-001fd0e08bd4_-browser-action",
+                "_62e31096-34e6-4503-8806-3d7a6004a1f4_-browser-action",
+                "treestyletab_piro_sakura_ne_jp-browser-action",
+                "_446900e4-71c2-419f-a6a7-df9c091e268b_-browser-action",
+                "minyt_example_org-browser-action",
+                "danabok16_gmail_com-browser-action",
+                "_5cce4ab5-3d47-41b9-af5e-8203eea05245_-browser-action",
+                "_531906d3-e22f-4a6c-a102-8057b88a1a63_-browser-action",
+                "_7a7a4a92-a2a0-41d1-9fd7-1e92480d612d_-browser-action",
+                "_e58d3966-3d76-4cd9-8552-1582fbc800c1_-browser-action",
+                "jid1-zadieub7xozojw_jetpack-browser-action",
+                "tab-session-manager_sienori-browser-action",
+                "_60f82f00-9ad5-4de5-b31c-b16a47c51558_-browser-action",
+                "_a8f7e9c2-4d3b-4a1e-9f8c-7b6d5e4a3c2b_-browser-action"
+              ],
+              "vertical-tabs": [],
+              "widget-overflow-fixed-list": [
+                "firefox-view-button",
+                "privatebrowsing-button",
+                "save-page-button",
+                "import-button",
+                "downloads-button",
+                "fxa-toolbar-menu-button"
+              ]
+            },
+            "seen": [
+              "developer-button",
+              "screenshot-button",
+              "fxms-bmb-button",
+              "adguardadblocker_adguard_com-browser-action",
+              "_9ce99d37-4a5e-409a-a04b-0f3f50491bc7_-browser-action",
+              "mozilla_cc3_internetdownloadmanager_com-browser-action",
+              "firefox_tampermonkey_net-browser-action",
+              "jid1-5fs7itlscuazbgwr_jetpack-browser-action",
+              "newtaboverride_agenedia_com-browser-action",
+              "_5efceaa7-f3a2-4e59-a54b-85319448e305_-browser-action",
+              "_a6c4a591-f1b2-4f03-b3ff-767e5bedf4e7_-browser-action",
+              "canvasblocker_kkapsner_de-browser-action",
+              "_36bdf805-c6f2-4f41-94d2-9b646342c1dc_-browser-action",
+              "_c3c10168-4186-445c-9c5b-63f12b8e2c87_-browser-action",
+              "_a4c4eda4-fb84-4a84-b4a1-f7c1cbf2a1ad_-browser-action",
+              "_762f9885-5a13-4abd-9c77-433dcd38b8fd_-browser-action",
+              "_b9acf540-acba-11e1-8ccb-001fd0e08bd4_-browser-action",
+              "sponsorblocker_ajay_app-browser-action",
+              "_3c6bf0cc-3ae2-42fb-9993-0d33104fdcaf_-browser-action",
+              "_62e31096-34e6-4503-8806-3d7a6004a1f4_-browser-action",
+              "minyt_example_org-browser-action",
+              "danabok16_gmail_com-browser-action",
+              "_5cce4ab5-3d47-41b9-af5e-8203eea05245_-browser-action",
+              "_446900e4-71c2-419f-a6a7-df9c091e268b_-browser-action",
+              "_f4961478-ac79-4a18-87e9-d2fb8c0442c4_-browser-action",
+              "gemini-voyager_nagi-ovo-browser-action",
+              "_74145f27-f039-47ce-a470-a662b129930a_-browser-action",
+              "_testpilot-containers-browser-action",
+              "treestyletab_piro_sakura_ne_jp-browser-action",
+              "_3c078156-979c-498b-8990-85f7987dd929_-browser-action",
+              "ublock0_raymondhill_net-browser-action",
+              "firefox_ghostery_com-browser-action",
+              "_531906d3-e22f-4a6c-a102-8057b88a1a63_-browser-action",
+              "_7a7a4a92-a2a0-41d1-9fd7-1e92480d612d_-browser-action",
+              "_e58d3966-3d76-4cd9-8552-1582fbc800c1_-browser-action",
+              "chrome-mask_overengineer_dev-browser-action",
+              "jid1-zadieub7xozojw_jetpack-browser-action",
+              "tab-session-manager_sienori-browser-action",
+              "simple-tab-groups_drive4ik-browser-action",
+              "reset-pbm-toolbar-button",
+              "ai-window-toggle",
+              "_60f82f00-9ad5-4de5-b31c-b16a47c51558_-browser-action",
+              "_a8f7e9c2-4d3b-4a1e-9f8c-7b6d5e4a3c2b_-browser-action"
+            ]
+          }'';
+        # LibreWolf 的 mozilla.cfg 里默认 dom.security.https_only_mode.upgrade_local=true：
+        # HTTPS-Only 连「本地/私网地址」也升级成 https。内网服务（Hermes WebUI
+        # http://192.168.2.120:30433、PVE 8006、OpenClash 面板 9090/3000…）全是明文 HTTP，
+        # 被升级后只会拿到 SSL_ERROR_RX_RECORD_TOO_LONG。关掉「升级本地地址」，公网照旧保护。
+        "dom.security.https_only_mode.upgrade_local" = false;
+        "intl.locale.requested" = "en-US,zh-CN";
+        "font.name.sans-serif.zh-CN" = "JetBrainsMono Nerd Font Propo";
+        "font.size.variable.x-western" = 14;
+      };
+
+      # 从 Windows profile 原样搬来的自定义 CSS（放在 flake 里 → 改了就 rebuild）。
+      userChrome = builtins.readFile ./librewolf/userChrome.css;
+    };
+  };
+
+  # ═══════════════════ 用户级软件包 ═══════════════════
+  home.packages = with pkgs; [
+    hyprpolkitagent # polkit 认证弹窗（Caelestia 不带）
+    networkmanagerapplet # 托盘网络图标
+    qt6Packages.fcitx5-configtool # 输入法设置界面
+
+    # Caelestia CLI 的外部依赖：这些在 Nix 里只是它构建时的 buildInputs，
+    # 不会自动进用户 profile，必须显式装上，否则剪贴板/截图/录屏/重启外壳都会失效。
+    quickshell # 提供 `qs`（外壳的 kill / ipc）
+    fuzzel # 剪贴板、emoji 选择器
+    cliphist # 剪贴板历史
+    swappy # 截图编辑器
+    libnotify # notify-send
+    psmisc # killall
+    grim
+    slurp
+    wl-clipboard
+    hyprpicker # 取色器
+    gpu-screen-recorder # caelestia record
+    # 壁纸守护进程（原 swww，nixpkgs 里已改名为 awww），由 hyprland.lua 的 hyprland.start
+    # 里 exec 拉起；外壳自己不再画壁纸，理由与过渡命令见上面 cli.settings.wallpaper.postHook。
+    awww
+    moonlight-qt # Moonlight 客户端：串流 Windows 主机上的 Sunshine
+    ddcutil # 外接显示器亮度（DDC/CI）：Caelestia 亮度条/亮度键的后端；
+            # 缺了它外壳会静默回退到 brightnessctl，而本机根本没有背光设备
+  ];
+
+  # ═══════════════════ 桌面配置（软链进 ~/.config）═══════════════════
+  # Hyprland 0.55 起配置用 Lua：~/.config/hypr/hyprland.lua
+  xdg.configFile."hypr/hyprland.lua".source = ./hypr/hyprland.lua;
+  # Caelestia 的「用户模板」：~/.config/caelestia/templates/ 下的每个文件都会被
+  # Caelestia 的 CLI 在换壁纸/换配色时用当前配色重渲染一遍，写到
+  # ~/.local/state/caelestia/theme/<同名文件>。这里用 HM 声明这两份模板的副本
+  # （真正的渲染是 Caelestia 自己做的，没有自造脚本；样式与颜色名见两个源文件里的注释）：
+  #   kitty.conf                → kitty 的 include 目标（终端配色）
+  #   catppuccin-overrides.lua  → nvim 的 color_overrides（编辑器配色）
+  xdg.configFile."caelestia/templates/kitty.conf".source = ./caelestia/kitty.conf;
+  xdg.configFile."caelestia/templates/catppuccin-overrides.lua".source = ./caelestia/catppuccin-overrides.lua;
+
+  # ═══════════════════ 会话环境变量 ═══════════════════
+  home.sessionVariables = {
+    LIBVA_DRIVER_NAME = "iHD"; # Intel 核显 VA-API
+    NIXOS_OZONE_WL = "1";
+    ELECTRON_OZONE_PLATFORM_HINT = "auto";
+    MOZ_ENABLE_WAYLAND = "1";
+    QT_QPA_PLATFORM = "wayland;xcb";
+    GDK_BACKEND = "wayland,x11";
+  };
+
+  # ═══════════════════ zsh ═══════════════════
+  programs.zsh = {
+    enable = true;
+    enableCompletion = true;
+    autosuggestion.enable = true;
+    syntaxHighlighting.enable = true;
+    history = {
+      size = 10000;
+      save = 10000;
+      share = true;
+    };
+    initContent = ''
+      zsh-newuser-install() { :; }
+      if command -v fastfetch >/dev/null 2>&1; then
+        fastfetch
+      fi
+      if command -v zoxide >/dev/null 2>&1; then
+        eval "$(zoxide init zsh)"
+      fi
+      source ${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k/powerlevel10k.zsh-theme
+      [[ -r $HOME/.p10k.zsh ]] && source $HOME/.p10k.zsh
+    '';
+  };
+
+  home.file.".p10k.zsh".source = ./p10k.zsh;
+}

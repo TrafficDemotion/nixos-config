@@ -1,0 +1,12 @@
+# nixos-rebuild 生成的符号链接（指向 /nix/store）
+/result
+/result-*
+
+# 本地手工回滚副本 —— 历史交给 git 管，不再入库
+*.bak-*
+*.hm-backup
+**/*.hm-backup
+
+# 编辑器临时文件
+*.swp
+*~
