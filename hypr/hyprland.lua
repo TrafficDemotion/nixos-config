@@ -66,12 +66,20 @@ end)
 ------------------------------
 ----  UI 交互音效（pixel）----
 ------------------------------
--- 素材来自 AOSP/LineageOS 的 UI 音（Effect_Tick），文件在 ~/.local/share/sfx/，
--- 由 home.nix 的 xdg.dataFile 声明（实际是 nix store 里的文件）。
--- 播放用 PipeWire 自带的 pw-play —— 本机没有 pulseaudio/paplay。
--- 只挂 Hyprland 事件：Caelestia 外壳内部（按钮 / 启动器 / 通知）没有任何音效接口，
--- 要那些只能改它的 QML（另一件事，见 README「给 Caelestia 打补丁」）。
--- 想关掉：把 sfxEnabled 改成 false。
+-- 素材：AOSP/LineageOS 的 UI 音，ffmpeg 转 48k 立体声（命令见 README「UI 交互音效」），
+-- 文件由 home.nix 的 xdg.dataFile 声明 → ~/.local/share/sfx/（在 nix store 里）：
+--   window-open.wav      新窗口                        peak -3 dB
+--   window-close.wav     关窗口                        peak -6 dB
+--   workspace-switch.wav 切工作区 / 打开外壳面板        peak -9 dB
+--   camera-shutter.wav   截图（Print / Super+Shift+S）  peak -5 dB
+--   lock.wav             锁屏（Super+L）                peak -5 dB
+-- 播放用 pw-play（PipeWire 自带；本机没有 pulseaudio/paplay）。
+-- ⚠️ 单条 ≈100–140 ms（实测 pw-play 的起流开销，空闲与否都一样，不是音箱唤醒慢）——
+--    这就是「事件已发生、声音慢半拍」的来源，也是这条路线延迟的下限。想更快只能让声音
+--    在外壳进程内播（QtMultimedia 的 SoundEffect），那要改 QML 且给壳加 qtmultimedia 依赖。
+-- ⚠️ 这里只覆盖「Hyprland 能看到的事」：窗口/工作区事件 + **键盘触发的**外壳面板。
+--    鼠标点栏上的图标、点启动器里的条目、通知弹出 —— Hyprland 一概看不见，要那些只能改 QML。
+-- 关掉：把 sfxEnabled 改成 false（整段就静默了）。
 local sfxEnabled = true
 local sfxDir = "/home/paan/.local/share/sfx/"
 
@@ -81,6 +89,17 @@ local function playSfx(file)
   end
 end
 
+-- 「先出声、再干活」：同一次按键里既放音又派发原动作。
+-- hl.dispatch() 是官方 API（`hl.meta.lua` 的 `HL.dispatch fun(dispatcher|function)`），
+-- 实测它既接受 dispatcher 也接受函数，函数体里那句 pw-play 会照常执行。
+local function bindSfx(file, dispatcher)
+  return function()
+    playSfx(file)
+    hl.dispatch(dispatcher)
+  end
+end
+
+-- ── 窗口 / 工作区（Hyprland 事件回调）──
 hl.on("window.open", function(_) playSfx("window-open.wav") end) -- 新窗口
 hl.on("window.close", function(_) playSfx("window-close.wav") end) -- 关窗口
 hl.on("workspace.active", function(_) playSfx("workspace-switch.wav") end) -- 切工作区
@@ -186,11 +205,11 @@ hl.config({
 local mainMod = "SUPER"
 
 -- Caelestia：面板 / 会话 / 通知
-hl.bind("SUPER + SUPER_L", hl.dsp.global("caelestia:launcher"), { release = true }) -- 单按 Win 键 = 启动器
-hl.bind(mainMod .. " + K", hl.dsp.global("caelestia:showall")) -- 仪表盘（显示所有面板）
-hl.bind(mainMod .. " + N", hl.dsp.global("caelestia:sidebar")) -- 侧边栏
-hl.bind("CTRL + ALT + Delete", hl.dsp.global("caelestia:session")) -- 电源菜单
-hl.bind(mainMod .. " + L", hl.dsp.global("caelestia:lock")) -- 锁屏（Caelestia 内置，背景已改壁纸）
+hl.bind("SUPER + SUPER_L", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:launcher")), { release = true }) -- 单按 Win 键 = 启动器
+hl.bind(mainMod .. " + K", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:showall"))) -- 仪表盘（显示所有面板）
+hl.bind(mainMod .. " + N", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:sidebar"))) -- 侧边栏
+hl.bind("CTRL + ALT + Delete", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:session"))) -- 电源菜单
+hl.bind(mainMod .. " + L", bindSfx("lock.wav", hl.dsp.global("caelestia:lock"))) -- 锁屏（Caelestia 内置，背景已改壁纸；解锁没有事件可挂）
 hl.bind("CTRL + ALT + C", hl.dsp.global("caelestia:clearNotifs"), { locked = true })
 
 -- 应用
@@ -243,14 +262,14 @@ hl.bind("ALT + mouse:272", hl.dsp.window.drag(), { mouse = true })
 hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
 -- 截图 / 录屏（Caelestia）
-hl.bind("Print", hl.dsp.exec_cmd("caelestia screenshot"), { locked = true })
-hl.bind(mainMod .. " + SHIFT + S", hl.dsp.global("caelestia:screenshotFreeze"))
-hl.bind(mainMod .. " + SHIFT + ALT + S", hl.dsp.global("caelestia:screenshot"))
+hl.bind("Print", bindSfx("camera-shutter.wav", hl.dsp.exec_cmd("caelestia screenshot")), { locked = true })
+hl.bind(mainMod .. " + SHIFT + S", bindSfx("camera-shutter.wav", hl.dsp.global("caelestia:screenshotFreeze")))
+hl.bind(mainMod .. " + SHIFT + ALT + S", bindSfx("camera-shutter.wav", hl.dsp.global("caelestia:screenshot")))
 hl.bind("CTRL + ALT + R", hl.dsp.exec_cmd("caelestia record"))
 
 -- 剪贴板 / emoji（Caelestia CLI + fuzzel）
-hl.bind(mainMod .. " + V", hl.dsp.exec_cmd("pkill fuzzel || caelestia clipboard"))
-hl.bind(mainMod .. " + Period", hl.dsp.exec_cmd("pkill fuzzel || caelestia emoji -p"))
+hl.bind(mainMod .. " + V", bindSfx("workspace-switch.wav", hl.dsp.exec_cmd("pkill fuzzel || caelestia clipboard")))
+hl.bind(mainMod .. " + Period", bindSfx("workspace-switch.wav", hl.dsp.exec_cmd("pkill fuzzel || caelestia emoji -p")))
 
 -- 音量（wpctl 来自 pipewire）
 hl.bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"), { locked = true, repeating = true })

@@ -183,7 +183,15 @@
     "sfx/window-open.wav".source = ./sfx/window-open.wav;
     "sfx/window-close.wav".source = ./sfx/window-close.wav;
     "sfx/workspace-switch.wav".source = ./sfx/workspace-switch.wav;
+    "sfx/camera-shutter.wav".source = ./sfx/camera-shutter.wav;
+    "sfx/lock.wav".source = ./sfx/lock.wav;
   };
+
+  # ── 重启外壳时别再连带杀掉它拉起来的应用（2026-09-13 用户要求）──
+  # caelestia.service 上游没设 KillMode → 默认 control-group：重启外壳（改 settings、
+  # 重装外壳包都会触发）时，从启动器/栏里开出来的 librewolf、kitty 全在它的 cgroup 里，
+  # 会被一起 SIGTERM。改成只终止主进程（qs 自己），已开的应用留着。
+  systemd.user.services.caelestia.Service.KillMode = "process";
 
   programs.kitty = {
     enable = true;

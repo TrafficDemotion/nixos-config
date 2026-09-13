@@ -147,25 +147,38 @@ sudo nixos-rebuild switch --flake /etc/nixos#nixos
 设备管理；上游唯一相关的 PR #1631 未合并），所以「点它自己的按钮出声」只能改 QML（见上一节）。
 这里走的是**另一条路**：用 Hyprland 的事件回调在窗口/工作区变化时播声音 —— 纯 config、零补丁。
 
-- 素材：AOSP/LineageOS 的 UI 音 `data/sounds/effects/Effect_Tick.ogg`（Apache-2.0），
+- 素材：AOSP/LineageOS 的 UI 音 `data/sounds/effects/{Effect_Tick,camera_click,Lock}.ogg`（Apache-2.0），
   转成 48k 立体声 wav，由 `home.nix` 的 `xdg.dataFile` 声明 → `~/.local/share/sfx/`（文件在 nix store 里）。
+  五条音与峰值：`window-open` -3dB / `window-close` -6dB / `workspace-switch` -9dB（也用于「打开外壳面板」）/
+  `camera-shutter` -5dB / `lock` -5dB。
 - 播放：`pw-play`（PipeWire 自带。本机没有 pulseaudio/paplay）。默认 sink 是蓝牙音箱 ROSE SportFeel。
-- 挂接：`hypr/hyprland.lua` 里的 `hl.on("window.open" / "window.close" / "workspace.active", …)`。
-  原始 `EventListener`（`src/config/lua/LuaEventHandler.cpp`）对这三个事件分别回调 1 个 Window /
-  Window / Workspace 对象，所以还能拿到 class/title/workspace id 做条件判断。
+- 挂接分两类：
+  - **事件**（Hyprland 自己报的）：`hl.on("window.open" / "window.close" / "workspace.active", …)`，
+    回调参数见 `src/config/lua/LuaEventHandler.cpp`（上游）。
+  - **键位**：`hl.bind(key, bindSfx("x.wav", hl.dsp.…), opts)` —— `bindSfx` 返回一个函数，先 `pw-play`
+    再用官方 API `hl.dispatch(dispatcher)` 派发原动作。实测 `hl.dispatch` 既接受 dispatcher 也接受函数。
+    已挂：单按 Win（启动器）、`SUPER+K`（仪表盘）、`SUPER+N`（侧栏）、`Ctrl+Alt+Del`（电源菜单）、
+    `SUPER+V`/`SUPER+.`（剪贴板/emoji）、`Print` 与 `SUPER+Shift+S`/`+Alt+S`（截图）、`SUPER+L`（锁屏）。
+
+**延迟（实测，2026-09-13）**：`pw-play` 单次调用墙钟 **112–136 ms**，空闲 4s 后与连发时**完全一样**
+（sink 的 `pause-on-idle=false`，所以不是音箱唤醒慢）——这就是「事件已发生、声音慢半拍」的来源，
+也是这条路线延迟的下限。连开 5 个窗口的 burst 测试里 **10/10 事件都出了声、无漏无重**，
+所以「没响应」基本是这 130ms 的固定延迟 + 音本身只有 ~50ms 容易听漏（峰值已各提 3dB）。
 
 复现素材（任意有 ffmpeg 的机器）：
 
 ```bash
 B=https://raw.githubusercontent.com/LineageOS/android_frameworks_base/lineage-23.0/data/sounds/effects
-curl -sfLO $B/Effect_Tick.ogg
-# 原始音高 / 低一点 / 高一点；峰值 -6 / -9 / -12 dB，时长都只有 ~50-65ms（Effect_Tick 本体仅 31ms）
-ffmpeg -y -i Effect_Tick.ogg -af "volume=+0.2dB"                        -ar 48000 -ac 2 window-open.wav
-ffmpeg -y -i Effect_Tick.ogg -af "asetrate=44100*0.84,aresample=48000"  -ar 48000 -ac 2 window-close.wav
-ffmpeg -y -i Effect_Tick.ogg -af "asetrate=44100*1.18,aresample=48000"  -ar 48000 -ac 2 workspace-switch.wav
+curl -sfLO $B/Effect_Tick.ogg; curl -sfLO $B/camera_click.ogg; curl -sfLO $B/Lock.ogg
+# 原始音高 / 低一点 / 高一点；峰值 -3 / -6 / -9 dB（Effect_Tick 本体只有 31ms）
+ffmpeg -y -i Effect_Tick.ogg   -af "volume=+2.8dB"                       -ar 48000 -ac 2 window-open.wav
+ffmpeg -y -i Effect_Tick.ogg   -af "asetrate=44100*0.84,aresample=48000" -ar 48000 -ac 2 window-close.wav
+ffmpeg -y -i Effect_Tick.ogg   -af "asetrate=44100*1.18,aresample=48000" -ar 48000 -ac 2 workspace-switch.wav
+ffmpeg -y -i camera_click.ogg  -af "volume=-3.6dB"                       -ar 48000 -ac 2 camera-shutter.wav
+ffmpeg -y -i Lock.ogg          -af "volume=+12.2dB"                      -ar 48000 -ac 2 lock.wav
 ```
 
-同目录其它可用的 AOSP UI 音：`Dock/Undock/Lock/Unlock/camera_click/VideoRecord/VideoStop.ogg`。
+同目录其它可用的 AOSP UI 音：`Dock/Undock/Unlock/VideoRecord/VideoStop/KeypressStandard.ogg`。
 换味道 = 转一个 wav + 加一行 `xdg.dataFile` + 改 `hyprland.lua` 里的文件名。
 
 **验收（不用听，直接量）**：建一个可抓的 null sink 临时设为默认，录它的 monitor，同时触发事件：
@@ -178,9 +191,21 @@ hyprctl dispatch 'hl.dsp.exec_cmd("kitty --class sfxtest -e sleep 8")'  # 开窗
 hyprctl dispatch "hl.dsp.focus({workspace = 9})"                        # 切工作区 → 应 -12.0dB
 ```
 
-实测结果（2026-09-13）：捕获里出现四个音，峰值/时刻与事件一一对应 ——
-2.26s = -6.0（开窗）、6.10s = -12.0、7.64s = -12.0（两次切工作区）、10.37s = -9.0（关窗）。
+实测结果（2026-09-13，两轮）：捕获里每段音的峰值/时刻与事件一一对应 ——
+第一轮 `2.26s=-6.0`（开窗）、`6.10s / 7.64s=-12.0`（两次切工作区）、`10.37s=-9.0`（关窗）；
+提音量后第二轮：`1.63s=-5.0` = **lock.wav**（同一函数里 `hl.dispatch` 的副作用也落到了 /tmp 的标记文件
+→ 证明 `bindSfx` 这条路走得通）、`4.13s=-5.0` = camera-shutter、`6.78s=-3.0` = 开窗、`9.85s=-6.0` = 关窗。
 事件→出声的时延约 100–140ms（pw-play 起流的时间）。关掉音效：`local sfxEnabled = false` 再 rebuild。
+
+## 重启外壳不再连坐用户应用（KillMode）
+
+`caelestia.service` 上游没写 `KillMode` → 默认 `control-group`：只要外壳重启（改 `settings`、重装外壳包
+都会），从启动器/栏里开出来的 librewolf、kitty 全在它的 cgroup 里，会被一起 SIGTERM。已在 `home.nix` 里补
+`systemd.user.services.caelestia.Service.KillMode = "process";`（HM 会与模块自带的 Service 段合并）。
+
+实测（2026-09-13）：先记下 `/sys/fs/cgroup$(systemctl --user show caelestia.service -p ControlGroup --value)/cgroup.procs`
+里那几个 librewolf PID（196840/196884/196926，都在外壳 cgroup 内），再 `systemctl --user restart caelestia`
+→ 外壳换成新 PID 197551，那三个 librewolf **全部存活**。以后改外壳设置不会再关掉你的浏览器/终端。
 
 > 注：`pw-record --target <sink>` 抓不到声音（不会自动连到 sink 的 monitor 口），
 > 要录 monitor 就走 `ffmpeg -f pulse -i <sink 名>.monitor`（pipewire-pulse 提供 PA 兼容层）。
