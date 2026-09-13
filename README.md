@@ -333,6 +333,27 @@ ffmpeg -v error -y -f pulse -i sfxevt.monitor -t 12 /tmp/evt.wav &
 → 内录捕获到 **-3.0 dB** 一声，同时 `grim` 截图确认 Bluetooth popout 已弹出。
 dashboard 切页那半只能真滚轮验证（Hyprland 不能注入滚轮事件），确认到「补丁进 store + 外壳无报错」为止。
 
+### 再修：抽屉整层滚轮空响 + popout 收起音（`patches/caelestia/0006-ui-sounds-drawers-wheel.patch`）
+
+用户第二次反馈「dashboard 内容页里滚滚轮也一直响、而且没切页」。真凶不在 dashboard：
+
+`modules/drawers/Interactions.qml` 是个**覆盖整个抽屉区的全屏 `CustomMouseArea`**，它的 `onWheel` 只在
+`event.x < bar.implicitWidth`（鼠标在竖栏上）时才真的转发给 `bar.handleWheel()`（音量/亮度/切工作区），
+别处滚轮**什么也不做** —— 而音效挂在共享组件上，于是全屏范围里滚轮都空响。
+改法：这层 `wheelSfx: false`，把出声挪到那个**真的会调东西**的分支里。
+
+第二件：`PopoutState.hasCurrent` 由 true→false（popout 收起）时补一声（`window-close.wav`，-6 dB），
+于是竖栏 popout 开/合都有音。
+
+**验收状态（诚实版）**：
+- popout **打开**音：有实拍证据 —— 光标移到竖栏蓝牙图标（`hl.dsp.cursor.move({x=3,y=1310})`）时捕获到
+  -3.0 dB 一声，`grim` 截图里 Bluetooth popout 确实展开着。
+- popout **收起**音与**滚轮**两处：**没能可靠复现**。原因有二：① Hyprland 不能注入滚轮事件，
+  滚轮相关的改法只能靠「补丁进 store + 外壳无报错」推断；② 测试时用户本人正在用这台机器，
+  我的 `hl.dsp.cursor.move` 和他的真实鼠标操作互相打架，捕获里混进他的点击音（-3 dB 与 popout
+  打开音同档，无法区分）。**用光标注入做验收时，先确认用户没在动鼠标**（或改用键盘）
+  —— 否则数据不可信。
+
 ## 已知坑
 
 1. **直通核显的显示器检测**：guest 收不到 HPD 中断，开机那一刻没接显示器的输出口一律认不到。
