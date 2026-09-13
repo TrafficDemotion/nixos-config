@@ -48,6 +48,14 @@ sudo git -C /etc/nixos push
   `/root/.ssh/config` 把 `github.com` 指到 `ssh.github.com:443` —— 本机 22 端口被代理挡掉。
 - `.gitignore` 排除 `result` / `result-*` 符号链与 `*.bak-*`、`*.hm-backup` 本地回滚副本
   （版本历史交给 git，不再堆 `.bak` 文件）。
+- **git 仓库会改变 nix 的求值行为**（实测）：
+  - nix 只把 **git 已跟踪**的文件算作 flake 源码 —— 新建的配置文件/补丁在 `git add` 之前，
+    `nixos-rebuild` 根本看不到它（`/nix/store/…-source` 里没有）。所以「加了文件却不 rebuild 生效」
+    先查 `git status`。`warning: Git tree '/etc/nixos' is dirty` 是正常提示（改动未提交）。
+  - nix 对 git 仓库路径做**属主检查**：非属主用户（paan）直接 `nix eval /etc/nixos#…` 会报
+    `repository path '/etc/nixos' is not owned by current user (libgit2 error code = 7)`。
+    已由 `configuration.nix` 里的 `programs.git.config.safe.directory = [ "/etc/nixos" ]`
+    （写进 `/etc/gitconfig`）修掉；root / `sudo nixos-rebuild` 本来就不受影响。
 - **推送闸门**：`git-hooks/pre-push` 扫描本次推送涉及的文件里有没有密钥形态
   （PEM / OpenSSH 私钥块、GitHub 与 Cloudflare 的 token 前缀、AWS 访问键、age 私钥），命中即中止推送；
   仓库是 public，这一步不能省。确切的模式串见 `git-hooks/pre-push` 里的 `patterns`。hooks 不入库，新克隆后要重装：
@@ -60,6 +68,46 @@ sudo git -C /etc/nixos push
 
 恢复：`git clone https://github.com/TrafficDemotion/nixos-config` 到 `/etc/nixos`
 （先备份原文件），新机器重建时 `hardware-configuration.nix` 要按本机重生成。
+
+## 给 Caelestia 打补丁（计划中的做法，尚未实施）
+
+外壳的 QML 在 `/nix/store/…-caelestia-shell-1.0.0/share/caelestia-shell/` 里只读，官方给的唯一
+覆盖点是 home-manager 的 `programs.caelestia.package`（`types.package`）。所以「打补丁」= 在
+`home.nix` 里把这个包换成打了补丁的版本：
+
+```nix
+programs.caelestia.package =
+  inputs.caelestia-shell.packages.${pkgs.system}.with-cli   # HM 模块的默认就是它
+  .overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + ''
+      substituteInPlace modules/bar/components/Clock.qml \
+        --replace-fail '原文' '改后'
+    '';
+  });
+```
+
+**补丁就放在这一个仓库里**（`patches/caelestia/0001-xxx.patch` + 上面那段 `postPatch`），不另开仓库：
+
+- nix 只把 **git 已跟踪**的文件算进 flake 源码（见上一节），补丁必须与被求值的 flake 同树；
+  分出去就得再加一个 flake input、多一份 lock 与版本漂移，维护量只增不减。
+- 补丁只有配合 flake/HM 里那段 `overrideAttrs` 才有意义，两者必须同版本演进 —— 拆成两个仓库
+  只会制造「改了 A 忘了 B」。恢复时也是克隆一个仓库就够。
+- 只有要把补丁发布给别人复用（或提上游 PR）时才值得拆出去。
+
+**升级外壳的固定流程**（补丁失配要**构建失败**，不许静默失效）：
+
+```bash
+sudo nix flake update --flake /etc/nixos                     # 只在这步才会动外壳版本
+sudo nixos-rebuild build --flake /etc/nixos#nixos            # 只构建不切换：失配在这里爆，外壳不重启
+# 按报错修 patches/ 里的锚点，然后
+sudo nixos-rebuild switch --flake /etc/nixos#nixos
+```
+
+实测（临时副本里验过，没动运行中的系统）：只改 QML 时重建的是「拷文件」那一步 ——
+**8 秒**、不编 C++；锚点对不上时报
+`substituteStream() in derivation caelestia-shell-1.0.0: ERROR: pattern … doesn't match anything in file`。
+注意 `caelestia-shell` 的 flake.lock 把 rev 钉死了，所以补丁不会因为「NixOS 更新」自己失效，
+只会在你主动 `nix flake update` 那一刻需要复核。
 
 ## 已知坑
 

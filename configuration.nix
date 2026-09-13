@@ -398,6 +398,16 @@
   # paan 免密 sudo（wheel 组）
   security.sudo.wheelNeedsPassword = false;
 
+  # ═══════════════ git（/etc/nixos 自 2026-09-13 起是 git 仓库）═══════════════
+  # nix 对「git 仓库里的 flake 路径」会做属主检查：非属主用户（paan）直接
+  # `nix eval /etc/nixos#…` 会报 "repository path '/etc/nixos' is not owned by
+  # current user (libgit2 error code = 7)" —— root（nixos-rebuild）不受影响。
+  # 这里声明 system 级 safe.directory（写进 /etc/gitconfig），所有用户都能求值。
+  programs.git = {
+    enable = true;
+    config.safe.directory = [ "/etc/nixos" ];
+  };
+
   # ═══════════════════════ 系统软件 ═══════════════════════
 
   environment.systemPackages = with pkgs; [
