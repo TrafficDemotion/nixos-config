@@ -141,7 +141,7 @@ sudo nixos-rebuild switch --flake /etc/nixos#nixos
 路径形如 `a/services/…`），追加到 `home.nix` 的 `patches` 列表里 → `sudo git -C /etc/nixos add -A`
 （**不做这步 nix 看不到文件**）→ `nixos-rebuild build` 验证 → `switch`。
 
-## UI 交互音效（Hyprland 事件/键位 + 外壳 QML 补丁）
+## UI 交互音效（全部由外壳 QML 补丁负责，Lua 只剩两条）
 
 外壳 Caelestia 自己**没有任何音效接口**（assets 里只有壁纸/gif/字体/pam，唯一叫 audio 的是音量与
 设备管理；上游唯一相关的 PR #1631 未合并），所以「点它自己的按钮出声」只能改 QML（见上一节）。
@@ -258,6 +258,53 @@ QML
 **已知缺口**：少数手写 `MouseArea` 的组件没有音——`modules/bar/components/TrayItem.qml`（托盘条目）、
 `Clock.qml`、`OsIcon.qml`（启动器入口，已随竖栏精简一起关掉）；面板「打开/关闭」本身没有单独音
 （点它的那一下就是音）。延迟与上面的 Hyprland 路线相同（每条音仍起一个 `pw-play`，≈100–140ms 起流）。
+
+### 事件级：把原来挂在 Hyprland Lua 上的音效搬进外壳（`patches/caelestia/0004-ui-sounds-events.patch`）
+
+2026-09-13 第二张补丁。原来 `hypr/hyprland.lua` 里靠 `hl.on(...)` 与 `bindSfx()` 包键位做的事，
+只要外壳看得见，就都改由 QML 触发 —— **触发点比键位包一层更宽**（鼠标点、IPC、空闲锁屏、CLI 都算）：
+
+| 声音 | 挂在哪个文件 | 判据 |
+|---|---|---|
+| 开窗 / 关窗 | `services/Hypr.qml` | `Hyprland.toplevels`（`UntypedObjectModel`）的 `objectInsertedPost` / `objectRemovedPre` |
+| 切工作区 | `services/Hypr.qml` | `onFocusedWorkspaceChanged` |
+| 面板开合（启动器/仪表盘/电源菜单/侧边栏/右下抽屉/OSD） | `components/ScreenState.qml` | 那 7 个 `property bool` 抽屉布尔值的变化（`bar` 不挂：鼠标一动就变） |
+| 截图快门 | `modules/areapicker/AreaPicker.qml` | `activeAsync` 变 true（8 个入口共用：`Print` / Super+Shift+S / +Alt+S 及其 clipboard 变体） |
+| 锁屏 / 解锁 | `modules/lock/Lock.qml` | `WlSessionLock.locked` 变化 —— **解锁在 Lua 那套里根本没有事件可挂**，顺带补上了（`sfx/unlock.wav`） |
+| 录屏开始 / 结束 | `services/Recorder.qml` | `onRunningChanged` |
+
+配套：
+- `services/UiSounds.qml` 增加 `windowOpen/windowClose/workspace/panel/shutter/lockState/record`，
+  并加 `playIfQuiet(file, minInterval, quietMs)` —— **面板开合紧跟一次点击音时 250ms 内不再出声**，
+  免得「点栏上图标开面板」听成两声。
+- 外壳刚启动时 `Hyprland.toplevels` 里已经有一批窗口，会一次性触发 N 个「新窗口」→ 用
+  `property bool soundsReady` + 2s `Timer` 把启动那一批吃掉。
+- `hypr/hyprland.lua` 相应**瘦身**：`hl.on("window.open"/"window.close"/"workspace.active")` 三条删掉，
+  9 条键位的 `bindSfx()` 外壳换成原来的裸 dispatcher。**只留两条**：`SUPER+V`（剪贴板）与
+  `SUPER+.`（emoji）—— 它们其实是 `fuzzel --dmenu`（`caelestia clipboard` / `caelestia emoji` 都是
+  外部进程），外壳看不到，QML 侧挂不上。
+
+**验收（无需按键，全部实测过）**：null sink 设为默认 + `ffmpeg -f pulse -i <sink>.monitor` 内录，
+每个动作打 epoch 时间戳再逐段对峰：
+
+```bash
+# 注意 wpctl 里 null sink 的名字列显示成 (null)，就靠它取 id：
+pw-cli create-node adapter '{ factory.name=support.null-audio-sink node.name=sfxevt media.class=Audio/Sink object.linger=true audio.position=[FL FR] }'
+NODE=$(wpctl status | sed -n 's/.*[^0-9]\([0-9]\{1,\}\)\. *(null).*/\1/p' | head -1)
+wpctl set-default $NODE
+ffmpeg -v error -y -f pulse -i sfxevt.monitor -t 12 /tmp/evt.wav &
+# 动作：开/关一个 kitty；切工作区；caelestia-shell ipc call drawers toggle launcher
+# ⚠️ Hyprland 0.55 + Lua 配置下 `hyprctl dispatch workspace 9` 直接报
+#    `')' expected near '9'`，必须用 Lua 形式：hyprctl dispatch 'hl.dsp.focus({ workspace = "9" })'
+```
+实测结果（每个动作**恰好一次**发声，切片峰值与预期文件一一对应）：
+切工作区 -9.0 dB ×2、开窗 -3.0 dB、关窗 -6.0 dB、抽屉开/关各 -9.0 dB；
+`peak pw-play` 并发数=1（说明旧的 Lua 回调没有残留重复出声）。外壳 journal 无 QML 报错
+（只有既有的 PowerProfiles 噪音）。
+
+**没验到的**：截图快门、锁屏/解锁、录屏开始/结束需要真按键或锁屏（会打扰当前会话），
+只做了「补丁落进 store + 外壳加载无报错」这一步；要确认就自己按一下
+（`Print` / `SUPER+L` / 右下抽屉里的 Record）。
 
 ## 已知坑
 
