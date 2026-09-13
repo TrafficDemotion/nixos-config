@@ -3,8 +3,8 @@
 ① modules/lock/Content.qml：上游是三栏 RowLayout（左＝天气/系统信息/媒体，中＝Center(时钟+头像+
    密码框)，右＝资源/通知抽屉），现在只留 Center 一栏，并给它 Layout.fillWidth（Center 的
    preferredWidth 是 centerWidth，只留一栏会被摆在左边）。
-② modules/lock/Center.qml：删掉 Clock（大字时钟）、日期文本、ProfilePic（头像），只留
-   PasswordInput（密码框）+ StateMessage（指纹提示 / 认证失败原因）。
+② modules/lock/Center.qml：删掉 Clock（大字时钟）、日期文本、ProfilePic（头像），只留「状态行 + 密码框」，且
+   **状态行放在密码框上面**（密码框要贴屏幕底边，下面不能再有东西）。
 ③ modules/lock/LockSurface.qml：
    - 删掉上游那个「大面板」：lockContent(Item) + lockBg(m3surface 圆角矩形+阴影) + 中心锁图标
      lockIcon 全部移除。屏幕上只剩 Content 这一组：宽度取 Center 的 preferredWidth、高度由内容
@@ -227,7 +227,7 @@
      }
  
      Component {
-@@ -192,55 +143,22 @@
+@@ -192,55 +143,23 @@
          }
      }
  
@@ -243,14 +243,15 @@
 -        implicitWidth: size
 -        implicitHeight: size
 +        // 本地补丁 0007：上游那个「大面板」（lockContent + lockBg + 中心锁图标）整个删掉了，
-+        // 屏幕上是「密码框 + 状态行」这一组：宽度取 Center 的 preferredWidth、高度由内容撑开，
-+        // 水平居中、贴屏幕底部，只留 extraExtraLarge(48) 的下边距。
++        // 屏幕上只有「密码框（+它上方的状态行）」这一组：宽度取 Center 的 preferredWidth、
++        // 高度由内容撑开，水平居中、贴屏幕底部，只留 Tokens.padding.small(8) 的下边距
++        // （2026-09-13 用户要求「几乎贴着屏幕边框」；原来 48）。
 +        width: implicitWidth
 +        height: implicitHeight
 +
 +        anchors.horizontalCenter: parent.horizontalCenter
 +        anchors.bottom: parent.bottom
-+        anchors.bottomMargin: Tokens.padding.extraExtraLarge
++        anchors.bottomMargin: Tokens.padding.small
  
          visible: Config.lock.enabled
 -        rotation: 180
@@ -368,14 +369,14 @@
  import qs.components
  import qs.services
  
-+// 本地补丁 0007：锁屏只留密码框。
++// 本地补丁 0007：锁屏只留密码框，且密码框贴屏幕最下方（用户要求「几乎贴着屏幕边框」）。
 +// 上游这一列是：Clock（大字时钟）→ 日期文本 → ProfilePic（头像）→ PasswordInput → StateMessage。
-+// 现在删掉时钟/日期/头像，只留「密码框 + 状态行（指纹提示、认证失败原因）」，整组由内容自己撑开
-+// （LockSurface 里再把它贴到屏幕底部），所以这里不再需要撑高的弹簧。
++// 现在只留「状态行（指纹提示 / 认证失败原因）+ 密码框」，且**状态行放在密码框上面**：
++// 密码框锚在屏幕底部，它下面不能再有东西，否则那点空隙会把密码框顶上去。
  ColumnLayout {
      id: root
  
-@@ -14,31 +18,9 @@
+@@ -14,29 +18,12 @@
  
      Layout.preferredWidth: centerWidth
      Layout.fillWidth: false
@@ -402,8 +403,19 @@
 -        Layout.topMargin: Tokens.spacing.extraExtraLarge * root.centerScale
 -        Layout.bottomMargin: Tokens.spacing.extraLarge * root.centerScale
 -        centerWidth: root.centerWidth
--    }
--
++    StateMessage {
++        Layout.fillWidth: true
++        pam: root.lock.pam
+     }
+ 
      PasswordInput {
-         Layout.alignment: Qt.AlignHCenter
-         centerScale: Math.max(0.8, root.centerScale)
+@@ -45,9 +32,4 @@
+         centerWidth: root.centerWidth
+         lock: root.lock
+     }
+-
+-    StateMessage {
+-        Layout.fillWidth: true
+-        pam: root.lock.pam
+-    }
+ }

@@ -374,8 +374,8 @@ maxFprintTries / enableHowdy / maxHowdyTries / triggerHowdyOnWake / hideNotifs`
 | 文件 | 改动 |
 | --- | --- |
 | `modules/lock/Content.qml` | 上游三栏（左＝天气/系统信息/媒体，右＝资源/通知抽屉）只留 Center 一栏，并给它 `Layout.fillWidth`（`Layout.preferredWidth` 是 `centerWidth`，单留一栏会被摆在左边） |
-| `modules/lock/Center.qml` | 删掉 Clock（大字时钟）、日期文本、ProfilePic（头像），只留 PasswordInput + StateMessage（指纹提示/认证失败原因） |
-| `modules/lock/LockSurface.qml` | ① 删掉「大面板」`lockContent` + `lockBg`（m3surface 圆角矩形+阴影）+ 中心锁图标 `lockIcon`；剩下的 `Content` 一组宽度取 `centerWidth`、高度由内容撑开，水平居中、`anchors.bottom` 贴屏幕底部、下边距 `Tokens.padding.extraExtraLarge`(48)。② 背景做成两层同一条壁纸（下面清晰、上面盖一层模糊），上锁时 `background`+`content` 一起 opacity 0→1（1000 ms）。③ 解锁时 `background`+`content` 一起 opacity→0 —— 锁屏**淡成透明**，露出下层真实运行的桌面（600 ms），然后 `PropertyAction locked=false`（**先放完动画再解锁**，`ipc call lock unlock` 与 PAM 成功走同一条信号） |
+| `modules/lock/Center.qml` | 删掉 Clock（大字时钟）、日期文本、ProfilePic（头像），只留「状态行 + 密码框」，且**状态行放在密码框上面**——密码框要贴屏幕底边，它下面不能再有东西（空状态行也会占一行高度，把密码框顶上去） |
+| `modules/lock/LockSurface.qml` | ① 删掉「大面板」`lockContent` + `lockBg`（m3surface 圆角矩形+阴影）+ 中心锁图标 `lockIcon`；剩下的 `Content` 一组宽度取 `centerWidth`、高度由内容撑开，水平居中、`anchors.bottom` 贴屏幕底部、下边距 `Tokens.padding.small`(8)（2026-09-13 用户要求「几乎贴着屏幕边框」，原来是 48）。② 背景做成两层同一条壁纸（下面清晰、上面盖一层模糊），上锁时 `background`+`content` 一起 opacity 0→1（1000 ms）。③ 解锁时 `background`+`content` 一起 opacity→0 —— 锁屏**淡成透明**，露出下层真实运行的桌面（600 ms），然后 `PropertyAction locked=false`（**先放完动画再解锁**，`ipc call lock unlock` 与 PAM 成功走同一条信号） |
 | `hypr/hyprland.lua` | `misc.session_lock_xray = true` —— Hyprland 官方选项「锁屏期间继续渲染下面的工作区」，是上面 ③「淡成透明露桌面」的前提；锁屏本身仍完全不透明，外面看不到桌面内容 |
 
 **两个踩坑才定下来的机制**（改这块前务必读）：
@@ -412,8 +412,8 @@ maxFprintTries / enableHowdy / maxHowdyTries / triggerHowdyOnWake / hideNotifs`
   `isLocked` = false**（动画坏了会卡在锁屏）。
 - 抓帧：后台连续 `grim`（锁屏期间从 ssh 照样成功，需 `XDG_RUNTIME_DIR`+`WAYLAND_DISPLAY=wayland-1`
   +`HYPRLAND_INSTANCE_SIGNATURE`）。淡入中间帧 ≈2.7 MB（桌面+锁屏混合）、稳定帧 845 KB（模糊壁纸+密码框）。
-- 稳定帧内容：只有底部居中的密码框，距底边约 100 px（48 是下边距，其余是**空状态行的占位高度**）；
-  没有面板/时钟/头像/通知。想更贴底 → 把 `Tokens.padding.extraExtraLarge`(48) 改成 `medium`(12) 等。
+- 稳定帧内容：只有底部居中的密码框，**距底边 8 px**（`Tokens.padding.small`；状态行已挪到密码框上方，所以下方没有任何东西）。想调高一点 → 把那个 token 改成 `medium`(12)/`large`(16) 等。
+- 密码策略（同一台机器，顺手查过）：本机**没有任何密码强度策略** —— `/etc/pam.d/*` 里没有 `pam_pwquality`/`pam_cracklib`、没有 `/etc/security/pwquality.conf`、`login.defs` 里没有 `PASS_MIN_LEN`、shadow 的 `passwd` 二进制里也没有内建检查串（`strings` 里搜不到）。实测：临时建个用户 `echo 114514 | sudo passwd --stdin pwtest` → `passwd -S` 显示密码设上了（`P` + 当天日期），随后 `userdel`。所以运行中的系统**不拦弱密码**；用户遇到的那次拒绝来自安装环境/创建密码那个工具（安装器 GUI 或 systemd 自己的 pwquality 支持，本机 systemd 编进了 `+PWQUALITY`）。要「强制」用任意密码，NixOS 原生且完全不过 PAM 的路子是声明式 `users.users.<name>.hashedPasswordFile` / `hashedPassword`（hash 直接写进 `/etc/shadow`）。
 - 外壳 `NRestarts` 保持 0、日志无 `invalid object`（未触发孤儿锁）。
 - **已由用户实测**：SUPER+L 输密码解锁整条路的手感（其中「窗口/bar 弹出」一条促成上面的 xray 改动）；
   以及锁屏上若只能输数字 = 图形会话仍是旧的 `QT_IM_MODULE=fcitx`，应急按一次 `Ctrl+Space`，
