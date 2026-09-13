@@ -1,0 +1,57 @@
+UI 音效：抽屉整层（含 dashboard 内容页）滚轮不再空响，只有真在竖栏上滚才响 + popout 收起音
+
+① modules/drawers/Interactions.qml 是覆盖整个抽屉区的全屏 CustomMouseArea，它的 onWheel 只在
+   `event.x < bar.implicitWidth`（鼠标在竖栏上）时才真的调 bar.handleWheel → 音量/亮度/切工作区；
+   别处滚轮什么也不做。共享组件默认出声 → 在 dashboard 内容页滚就空响。改法：这层 wheelSfx: false，
+   仅在真的转发给 bar.handleWheel 那个分支里出声。
+② PopoutState.hasCurrent 由 true→false（popout 收起）时给一声（window-close，-6 dB）。
+--- a/modules/drawers/Interactions.qml
++++ b/modules/drawers/Interactions.qml
+@@ -4,11 +4,16 @@
+ import Caelestia.Config
+ import qs.components
+ import qs.components.controls
++import qs.services
+ import qs.modules.bar as Bar
+ import qs.modules.bar.popouts as BarPopouts
+ 
+ CustomMouseArea {
+     id: root
++
++    // 本地补丁：这层是覆盖整个抽屉区的全屏 MouseArea，它自己「滚轮不滚动任何东西」——
++    // 出声改到下面 onWheel 里「真的会调东西」的分支（鼠标在竖栏上时），见 0006。
++    wheelSfx: false
+ 
+     required property ShellScreen screen
+     required property BarPopouts.Wrapper popouts
+@@ -55,6 +60,7 @@
+         if (fullscreen)
+             return;
+         if (event.x < bar.implicitWidth) {
++            UiSounds.slider();
+             bar.handleWheel(event.y, event.angleDelta);
+         }
+     }
+--- a/modules/bar/popouts/PopoutState.qml
++++ b/modules/bar/popouts/PopoutState.qml
+@@ -10,6 +10,8 @@
+     onHasCurrentChanged: {
+         if (hasCurrent)
+             UiSounds.popout();
++        else
++            UiSounds.popoutClose();
+     }
+ 
+     signal detachRequested(mode: string)
+--- a/services/UiSounds.qml
++++ b/services/UiSounds.qml
+@@ -97,4 +97,9 @@
+     function popout(): void {
+         play("workspace-switch.wav", 150);
+     }
++
++    // popout 收起：用「关窗」那条低音，比打开那条轻
++    function popoutClose(): void {
++        play("window-close.wav", 200);
++    }
+ }

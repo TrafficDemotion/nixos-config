@@ -43,6 +43,7 @@
             ./patches/caelestia/0003-ui-sounds.patch
             ./patches/caelestia/0004-ui-sounds-events.patch
             ./patches/caelestia/0005-ui-sounds-tab-popout.patch
+            ./patches/caelestia/0006-ui-sounds-drawers-wheel.patch
           ];
       });
 
