@@ -1,13 +1,13 @@
-UI 交互音效（QML 补丁）：给外壳内部各个交互点加音效
+UI 交互音效（QML 补丁，C1）：给外壳内部各个交互点加音效
 
-新增单例 services/UiSounds.qml（限流 + Quickshell.execDetached pw-play），
-挂在共享组件上，一处改动覆盖一大片：
-  components/StateLayer.qml              所有走它的点击（48 个文件：按钮、栏上图标、
-                                         popout 条目、launcher 条目、tile、锁屏、文件对话框…）
-  components/controls/StyledSwitch.qml   开关（Switch 模板不走 StateLayer，不会重复出声）
-  components/controls/FilledSlider.qml   OSD 的音量/亮度条拖动
-  components/controls/StyledSlider.qml   弹出面板 / nexus / 媒体页的滑条
-  components/controls/CustomMouseArea.qml 滚轮（音量、亮度、工作区、日历翻页、滚动条）
+新增单例 services/UiSounds.qml（限流 + Quickshell.execDetached pw-play，可用
+CAELESTIA_UI_SOUNDS=0 关掉），挂在共享组件上，一处改动覆盖一大片：
+  components/StateLayer.qml                所有走它的点击（48 个文件：按钮、栏上图标、
+                                           popout 条目、launcher 条目、tile、锁屏、文件对话框…）
+  components/controls/StyledSwitch.qml     开关（Switch 模板不走 StateLayer，不会重复出声）
+  components/controls/FilledSlider.qml     OSD 的音量/亮度条拖动
+  components/controls/StyledSlider.qml     弹出面板 / nexus / 媒体页的滑条
+  components/controls/CustomMouseArea.qml  滚轮（音量、亮度、工作区、日历翻页、滚动条）
 --- a/components/StateLayer.qml
 +++ b/components/StateLayer.qml
 @@ -59,7 +59,11 @@
@@ -73,7 +73,7 @@ UI 交互音效（QML 补丁）：给外壳内部各个交互点加音效
          }
 --- /dev/null
 +++ b/services/UiSounds.qml
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,49 @@
 +pragma Singleton
 +pragma ComponentBehavior: Bound
 +
@@ -89,8 +89,10 @@ UI 交互音效（QML 补丁）：给外壳内部各个交互点加音效
 +    // 播放仍是「每条音起一个 pw-play 进程」≈100–140ms 起流延迟（与 Hyprland 事件那套
 +    // 同一代价）；想更快得在壳内解码播放（QtMultimedia），见 README。
 +    // 素材在 ~/.local/share/sfx/（由 home.nix 的 xdg.dataFile 声明）。
-+    // 关掉：enabled = false。
-+    property bool enabled: true
++    // 关掉：在 home.nix 里把 programs.caelestia.systemd.environment 设成
++    //   [ "CAELESTIA_UI_SOUNDS=0" ]
++    // 再 rebuild（外壳会重启一次；KillMode=process 已保证不会连坐你的应用）。
++    property bool enabled: Quickshell.env("CAELESTIA_UI_SOUNDS") !== "0"
 +    readonly property string dir: `${Quickshell.env("HOME")}/.local/share/sfx/`
 +
 +    // 同一文件的最小间隔（毫秒）——拖动/连点时别糊成一片
