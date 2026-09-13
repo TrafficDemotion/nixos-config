@@ -168,6 +168,23 @@
   # secondary/term0..15），不会互相打架。
   # 想退回静态配色：把 include 那行换成备份 home.nix.bak-20260913-caelestia-colours
   # 里那批 background/color0..15 键，并删掉 ~/.config/caelestia/templates/ 下那两份。
+  # ═══════════════════ UI 交互音效素材（pixel） ═══════════════════
+  # 音源 = AOSP/LineageOS 的 UI 音（data/sounds/effects/Effect_Tick.ogg，Apache-2.0），
+  # 用 ffmpeg 转成 48k 立体声 wav、按事件做了音高/音量区分，落在 ~/.local/share/sfx/
+  # （这里声明 → 进 nix store，随 generation 回滚）。播放方是 hypr/hyprland.lua 里的
+  # hl.on(...) 事件（pw-play）；Caelestia 外壳自己没有任何音效接口。
+  #   三种音的实际参数（源峰值→施加增益→成品峰值）：
+  #     window-open      原始音高                      → -6 dB
+  #     window-close     音高 ×0.84（低一点）          → -9 dB
+  #     workspace-switch 音高 ×1.18（高一点、更轻）    → -12 dB
+  #   原始 ogg 与其它 AOSP UI 音（Dock/Undock/Lock/Unlock/camera_click/VideoRecord/
+  #   VideoStop）的下载与 ffmpeg 转换命令见 README「UI 交互音效」一节。
+  xdg.dataFile = {
+    "sfx/window-open.wav".source = ./sfx/window-open.wav;
+    "sfx/window-close.wav".source = ./sfx/window-close.wav;
+    "sfx/workspace-switch.wav".source = ./sfx/workspace-switch.wav;
+  };
+
   programs.kitty = {
     enable = true;
     settings = {

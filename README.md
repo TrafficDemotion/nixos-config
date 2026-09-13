@@ -17,6 +17,7 @@
 | `edid/aoc-q24g50f.bin` | 显示器的真实 EDID（软件假负载）→ 系统固件目录 |
 | `pkgs/sunshine.nix` | vendored 的 Sunshine 包定义（nixpkgs 自带的版本会泄漏 dma-buf） |
 | `patches/caelestia/*.patch` | 打在 caelestia-shell 上的本地补丁（见「给 Caelestia 打补丁」一节） |
+| `sfx/*.wav` | UI 交互音效素材（AOSP 的 Effect_Tick 转出）→ `~/.local/share/sfx/` |
 | `p10k.zsh` | powerlevel10k 配置 → `~/.p10k.zsh` |
 | `hardware-configuration.nix` | `nixos-generate-config` 生成，不要手改 |
 
@@ -139,6 +140,50 @@ sudo nixos-rebuild switch --flake /etc/nixos#nixos
 **加新补丁的标准动作**：在 `patches/caelestia/` 放一张 `git diff` 风格的补丁（`-p1` 可应用，
 路径形如 `a/services/…`），追加到 `home.nix` 的 `patches` 列表里 → `sudo git -C /etc/nixos add -A`
 （**不做这步 nix 看不到文件**）→ `nixos-rebuild build` 验证 → `switch`。
+
+## UI 交互音效（Hyprland 事件 + pw-play）
+
+外壳 Caelestia 自己**没有任何音效接口**（assets 里只有壁纸/gif/字体/pam，唯一叫 audio 的是音量与
+设备管理；上游唯一相关的 PR #1631 未合并），所以「点它自己的按钮出声」只能改 QML（见上一节）。
+这里走的是**另一条路**：用 Hyprland 的事件回调在窗口/工作区变化时播声音 —— 纯 config、零补丁。
+
+- 素材：AOSP/LineageOS 的 UI 音 `data/sounds/effects/Effect_Tick.ogg`（Apache-2.0），
+  转成 48k 立体声 wav，由 `home.nix` 的 `xdg.dataFile` 声明 → `~/.local/share/sfx/`（文件在 nix store 里）。
+- 播放：`pw-play`（PipeWire 自带。本机没有 pulseaudio/paplay）。默认 sink 是蓝牙音箱 ROSE SportFeel。
+- 挂接：`hypr/hyprland.lua` 里的 `hl.on("window.open" / "window.close" / "workspace.active", …)`。
+  原始 `EventListener`（`src/config/lua/LuaEventHandler.cpp`）对这三个事件分别回调 1 个 Window /
+  Window / Workspace 对象，所以还能拿到 class/title/workspace id 做条件判断。
+
+复现素材（任意有 ffmpeg 的机器）：
+
+```bash
+B=https://raw.githubusercontent.com/LineageOS/android_frameworks_base/lineage-23.0/data/sounds/effects
+curl -sfLO $B/Effect_Tick.ogg
+# 原始音高 / 低一点 / 高一点；峰值 -6 / -9 / -12 dB，时长都只有 ~50-65ms（Effect_Tick 本体仅 31ms）
+ffmpeg -y -i Effect_Tick.ogg -af "volume=+0.2dB"                        -ar 48000 -ac 2 window-open.wav
+ffmpeg -y -i Effect_Tick.ogg -af "asetrate=44100*0.84,aresample=48000"  -ar 48000 -ac 2 window-close.wav
+ffmpeg -y -i Effect_Tick.ogg -af "asetrate=44100*1.18,aresample=48000"  -ar 48000 -ac 2 workspace-switch.wav
+```
+
+同目录其它可用的 AOSP UI 音：`Dock/Undock/Lock/Unlock/camera_click/VideoRecord/VideoStop.ogg`。
+换味道 = 转一个 wav + 加一行 `xdg.dataFile` + 改 `hyprland.lua` 里的文件名。
+
+**验收（不用听，直接量）**：建一个可抓的 null sink 临时设为默认，录它的 monitor，同时触发事件：
+
+```bash
+pw-cli create-node adapter '{ factory.name=support.null-audio-sink node.name=sfxnull media.class=Audio/Sink object.linger=true audio.position=[FL FR] }'
+wpctl set-default <null 的 id>
+timeout 15 ffmpeg -f pulse -i sfxnull.monitor -t 15 /tmp/cap.wav &
+hyprctl dispatch 'hl.dsp.exec_cmd("kitty --class sfxtest -e sleep 8")'  # 开窗 → 应 -6.0dB
+hyprctl dispatch "hl.dsp.focus({workspace = 9})"                        # 切工作区 → 应 -12.0dB
+```
+
+实测结果（2026-09-13）：捕获里出现四个音，峰值/时刻与事件一一对应 ——
+2.26s = -6.0（开窗）、6.10s = -12.0、7.64s = -12.0（两次切工作区）、10.37s = -9.0（关窗）。
+事件→出声的时延约 100–140ms（pw-play 起流的时间）。关掉音效：`local sfxEnabled = false` 再 rebuild。
+
+> 注：`pw-record --target <sink>` 抓不到声音（不会自动连到 sink 的 monitor 口），
+> 要录 monitor 就走 `ffmpeg -f pulse -i <sink 名>.monitor`（pipewire-pulse 提供 PA 兼容层）。
 
 ## 已知坑
 

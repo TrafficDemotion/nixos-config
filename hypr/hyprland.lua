@@ -63,6 +63,28 @@ hl.on("hyprland.start", function()
   -- （2026-09-12 删掉原来这行的 `hl.exec_cmd("fcitx5 -d")`）。
 end)
 
+------------------------------
+----  UI 交互音效（pixel）----
+------------------------------
+-- 素材来自 AOSP/LineageOS 的 UI 音（Effect_Tick），文件在 ~/.local/share/sfx/，
+-- 由 home.nix 的 xdg.dataFile 声明（实际是 nix store 里的文件）。
+-- 播放用 PipeWire 自带的 pw-play —— 本机没有 pulseaudio/paplay。
+-- 只挂 Hyprland 事件：Caelestia 外壳内部（按钮 / 启动器 / 通知）没有任何音效接口，
+-- 要那些只能改它的 QML（另一件事，见 README「给 Caelestia 打补丁」）。
+-- 想关掉：把 sfxEnabled 改成 false。
+local sfxEnabled = true
+local sfxDir = "/home/paan/.local/share/sfx/"
+
+local function playSfx(file)
+  if sfxEnabled then
+    hl.exec_cmd("pw-play " .. sfxDir .. file)
+  end
+end
+
+hl.on("window.open", function(_) playSfx("window-open.wav") end) -- 新窗口
+hl.on("window.close", function(_) playSfx("window-close.wav") end) -- 关窗口
+hl.on("workspace.active", function(_) playSfx("workspace-switch.wav") end) -- 切工作区
+
 ------------------------
 ----  外观 / 动画  ----
 ------------------------
