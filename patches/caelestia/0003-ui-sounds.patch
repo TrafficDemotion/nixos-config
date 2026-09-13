@@ -1,0 +1,123 @@
+UI 交互音效（QML 补丁）：给外壳内部各个交互点加音效
+
+新增单例 services/UiSounds.qml（限流 + Quickshell.execDetached pw-play），
+挂在共享组件上，一处改动覆盖一大片：
+  components/StateLayer.qml              所有走它的点击（48 个文件：按钮、栏上图标、
+                                         popout 条目、launcher 条目、tile、锁屏、文件对话框…）
+  components/controls/StyledSwitch.qml   开关（Switch 模板不走 StateLayer，不会重复出声）
+  components/controls/FilledSlider.qml   OSD 的音量/亮度条拖动
+  components/controls/StyledSlider.qml   弹出面板 / nexus / 媒体页的滑条
+  components/controls/CustomMouseArea.qml 滚轮（音量、亮度、工作区、日历翻页、滚动条）
+--- a/components/StateLayer.qml
++++ b/components/StateLayer.qml
+@@ -59,7 +59,11 @@
+     cursorShape: disabled ? undefined : Qt.PointingHandCursor
+     hoverEnabled: true
+ 
+-    onPressed: e => press(e.x, e.y)
++    // 本地补丁：交互音（在按下时就出声，反馈最早）
++    onPressed: e => {
++        press(e.x, e.y);
++        UiSounds.click();
++    }
+ 
+     onPressedChanged: {
+         if (!(pressed || manualPressOverride) && !rippleAnim.running && circle.opacity > 0)
+--- a/components/controls/StyledSwitch.qml
++++ b/components/controls/StyledSwitch.qml
+@@ -12,6 +12,9 @@
+     property bool disabled
+ 
+     enabled: !disabled
++
++    // 本地补丁：开关音（开=高一点，关=低一点）
++    onToggled: UiSounds.toggle(checked)
+ 
+     implicitWidth: implicitIndicatorWidth
+     implicitHeight: implicitIndicatorHeight
+--- a/components/controls/FilledSlider.qml
++++ b/components/controls/FilledSlider.qml
+@@ -108,6 +108,7 @@
+         oldValue = value;
+         handle.moving = true;
+         stateChangeDelay.restart();
++        UiSounds.slider();
+     }
+ 
+     Timer {
+--- a/components/controls/StyledSlider.qml
++++ b/components/controls/StyledSlider.qml
+@@ -173,6 +173,7 @@
+         }
+         onPositionChanged: e => {
+             dragMovement = (e.x - pressStartX) / width;
++            UiSounds.slider();
+             if (root.interactionOnMove)
+                 root.interaction(posBinding.value);
+         }
+--- a/components/controls/CustomMouseArea.qml
++++ b/components/controls/CustomMouseArea.qml
+@@ -1,4 +1,5 @@
+ import QtQuick
++import qs.services
+ 
+ MouseArea {
+     property int scrollAccumulatedY: 0
+@@ -14,6 +15,7 @@
+ 
+         // Trigger handler and reset if above threshold
+         if (Math.abs(scrollAccumulatedY) >= 120) {
++            UiSounds.slider();
+             onWheel(event);
+             scrollAccumulatedY = 0;
+         }
+--- /dev/null
++++ b/services/UiSounds.qml
+@@ -0,0 +1,47 @@
++pragma Singleton
++pragma ComponentBehavior: Bound
++
++import QtQuick
++import Quickshell
++
++Singleton {
++    id: root
++
++    // ── 本地补丁（patches/caelestia/0003-ui-sounds.patch）────────────────────────
++    // Caelestia 外壳自己没有音效接口，这里给交互点补上：所有走 StateLayer 的点击、
++    // StyledSwitch 的开关、两类滑条的拖动、CustomMouseArea 的滚轮、dashboard 切标签。
++    // 播放仍是「每条音起一个 pw-play 进程」≈100–140ms 起流延迟（与 Hyprland 事件那套
++    // 同一代价）；想更快得在壳内解码播放（QtMultimedia），见 README。
++    // 素材在 ~/.local/share/sfx/（由 home.nix 的 xdg.dataFile 声明）。
++    // 关掉：enabled = false。
++    property bool enabled: true
++    readonly property string dir: `${Quickshell.env("HOME")}/.local/share/sfx/`
++
++    // 同一文件的最小间隔（毫秒）——拖动/连点时别糊成一片
++    property var lastPlayed: ({})
++
++    function play(file: string, minInterval: int): void {
++        if (!enabled)
++            return;
++        const now = Date.now();
++        if (now - (lastPlayed[file] ?? 0) < minInterval)
++            return;
++        lastPlayed[file] = now;
++        Quickshell.execDetached(["pw-play", dir + file]);
++    }
++
++    // 通用点击：按钮 / 列表条目 / 栏上图标 / tile / 启动器条目 …
++    function click(): void {
++        play("ui-click.wav", 40);
++    }
++
++    // 开关类（StyledSwitch）：开=高一点、关=低一点
++    function toggle(on: bool): void {
++        play(on ? "ui-toggle-on.wav" : "ui-toggle-off.wav", 60);
++    }
++
++    // 滑条拖动 / 滚轮调节（音量、亮度、工作区、日历翻页…）
++    function slider(): void {
++        play("ui-scroll.wav", 90);
++    }
++}

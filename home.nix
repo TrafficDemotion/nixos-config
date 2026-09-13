@@ -28,6 +28,9 @@
     #        顺带给上游 #1809 的 modelData 判空（拔屏后 TypeError）。
     #   0002 Nexus 壁纸页：壁纸交给 aww 画（background.wallpaperEnabled = false）
     #        时仍显示当前壁纸预览、Wallpapers 按钮不再变灰。
+    #   0003 外壳内部 UI 交互音效（C1）：新增单例 services/UiSounds.qml，挂在共享组件上——
+    #        StateLayer（所有按钮/条目/图标/tile 的点击）、StyledSwitch（开关）、
+    #        FilledSlider + StyledSlider（音量/亮度/媒体滑条）、CustomMouseArea（滚轮）。
     # 锚点对不上会**构建失败**（不会静默失效）：升级外壳前先 `nixos-rebuild build`。
     package =
       inputs.caelestia-shell.packages.${pkgs.stdenv.hostPlatform.system}.with-cli
@@ -37,6 +40,7 @@
           ++ [
             ./patches/caelestia/0001-brightness-selfheal.patch
             ./patches/caelestia/0002-wallpaper-page-usable.patch
+            ./patches/caelestia/0003-ui-sounds.patch
           ];
       });
 
@@ -185,6 +189,11 @@
     "sfx/workspace-switch.wav".source = ./sfx/workspace-switch.wav;
     "sfx/camera-shutter.wav".source = ./sfx/camera-shutter.wav;
     "sfx/lock.wav".source = ./sfx/lock.wav;
+    # C1（外壳内部交互音，见 patches/caelestia/0003-ui-sounds.patch）
+    "sfx/ui-click.wav".source = ./sfx/ui-click.wav;
+    "sfx/ui-toggle-on.wav".source = ./sfx/ui-toggle-on.wav;
+    "sfx/ui-toggle-off.wav".source = ./sfx/ui-toggle-off.wav;
+    "sfx/ui-scroll.wav".source = ./sfx/ui-scroll.wav;
   };
 
   # ── 重启外壳时别再连带杀掉它拉起来的应用（2026-09-13 用户要求）──
