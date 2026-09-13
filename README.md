@@ -170,12 +170,20 @@ sudo nixos-rebuild switch --flake /etc/nixos#nixos
 ```bash
 B=https://raw.githubusercontent.com/LineageOS/android_frameworks_base/lineage-23.0/data/sounds/effects
 curl -sfLO $B/Effect_Tick.ogg; curl -sfLO $B/camera_click.ogg; curl -sfLO $B/Lock.ogg
-# 原始音高 / 低一点 / 高一点；峰值 -3 / -6 / -9 dB（Effect_Tick 本体只有 31ms）
-ffmpeg -y -i Effect_Tick.ogg   -af "volume=+2.8dB"                       -ar 48000 -ac 2 window-open.wav
-ffmpeg -y -i Effect_Tick.ogg   -af "asetrate=44100*0.84,aresample=48000" -ar 48000 -ac 2 window-close.wav
-ffmpeg -y -i Effect_Tick.ogg   -af "asetrate=44100*1.18,aresample=48000" -ar 48000 -ac 2 workspace-switch.wav
-ffmpeg -y -i camera_click.ogg  -af "volume=-3.6dB"                       -ar 48000 -ac 2 camera-shutter.wav
-ffmpeg -y -i Lock.ogg          -af "volume=+12.2dB"                      -ar 48000 -ac 2 lock.wav
+# 原始音高 / 低一点 / 高一点；下面这套是 2026-09-13「整体 +6 dB（响一倍）」之后的参数。
+# 加成后的峰值：开窗/关窗/快门/锁屏/解锁/录屏 = 0 dBFS（每个文件仅 1–9 个样本顶到满刻度，
+# 听不出削波）、切工作区/点击 = -3、开关 = -1、滚动 = -11 dB（Effect_Tick 本体只有 31ms）。
+ffmpeg -y -i Effect_Tick.ogg   -af "volume=+8.8dB"                        -ar 48000 -ac 2 window-open.wav
+ffmpeg -y -i Effect_Tick.ogg   -af "asetrate=44100*0.84,aresample=48000,volume=+6dB" -ar 48000 -ac 2 window-close.wav
+ffmpeg -y -i Effect_Tick.ogg   -af "asetrate=44100*1.18,aresample=48000,volume=+6dB" -ar 48000 -ac 2 workspace-switch.wav
+ffmpeg -y -i camera_click.ogg  -af "volume=+2.4dB"                        -ar 48000 -ac 2 camera-shutter.wav
+ffmpeg -y -i Lock.ogg          -af "volume=+18.2dB"                       -ar 48000 -ac 2 lock.wav
+```
+
+> 要整体再响/再轻：**别去改 12 个文件**，一次 `for f in sfx/*.wav; do ffmpeg -i $f -af volume=±NdB …` 重跑
+> 一遍再 switch 就行（`~/.local/share/sfx/` 是 store 软链，换文件不用重启外壳）。
+> 唯一的天花板是 16-bit 满刻度：峰值已经到 0 dBFS 的那几个（开窗/关窗/快门/锁屏/解锁/录屏）
+> 再往上就会削波 —— 想更高就把源改成 32-bit float wav，或反过来把「轻」的那几条再压低一点。
 ```
 
 同目录其它可用的 AOSP UI 音：`Dock/Undock/Unlock/VideoRecord/VideoStop/KeypressStandard.ogg`。
