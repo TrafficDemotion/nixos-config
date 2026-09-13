@@ -1,0 +1,91 @@
+UI 音效：dashboard 切页只在真换页时出声 + 竖栏 popout 打开音
+
+用户反馈两条：① 鼠标在 dashboard 页签上/周边滚轮，即使没换页（滚到两头）也一直响；
+② 最左侧（竖栏）的 popout 没有音效。改法：
+  components/ScreenState.qml   onDashboardTabChanged → UiSounds.page()（唯一一次「换页」音）
+  components/controls/CustomMouseArea.qml  新增 wheelSfx（默认 true）
+  modules/dashboard/Tabs.qml  页签的滚轮区 wheelSfx: false（滚轮只切页，不再按格出声）
+  modules/bar/popouts/PopoutState.qml  hasCurrent 变 true（hover 打开 popout）时出声
+  services/UiSounds.qml       新增 page() / popout()
+--- a/services/UiSounds.qml
++++ b/services/UiSounds.qml
+@@ -87,4 +87,14 @@
+     function record(on: bool): void {
+         play(on ? "video-record.wav" : "video-stop.wav", 400);
+     }
++
++    // Dashboard 切页：只在页码真的变了时响（滚到两头的空滚不响）
++    function page(): void {
++        playIfQuiet("workspace-switch.wav", 150, 250);
++    }
++
++    // 竖栏 popout（audio/network/bluetooth/battery/tray/power）——hover 开出来的，不会和点击音叠
++    function popout(): void {
++        play("workspace-switch.wav", 150);
++    }
+ }
+--- a/components/ScreenState.qml
++++ b/components/ScreenState.qml
+@@ -23,5 +23,7 @@
+ 
+     // Dashboard state
+     property int dashboardTab
++    // 本地补丁：切 dashboard 页时响一次（滚轮 / 点击页签 / 拖动都算；滚到两头的空滚不算）
++    onDashboardTabChanged: UiSounds.page()
+     property date dashboardDate: new Date()
+ }
+--- a/components/controls/CustomMouseArea.qml
++++ b/components/controls/CustomMouseArea.qml
+@@ -3,6 +3,10 @@
+ 
+ MouseArea {
+     property int scrollAccumulatedY: 0
++
++    // 本地补丁：默认滚轮出声；消费方若「滚轮本身不滚动、只干别的」（如 dashboard 页签只切页）
++    // 就设 wheelSfx: false，避免滚了没反应也在响。
++    property bool wheelSfx: true
+ 
+     function onWheel(event: WheelEvent): void {
+     }
+@@ -15,7 +19,8 @@
+ 
+         // Trigger handler and reset if above threshold
+         if (Math.abs(scrollAccumulatedY) >= 120) {
+-            UiSounds.slider();
++            if (wheelSfx)
++                UiSounds.slider();
+             onWheel(event);
+             scrollAccumulatedY = 0;
+         }
+--- a/modules/dashboard/Tabs.qml
++++ b/modules/dashboard/Tabs.qml
+@@ -124,6 +124,10 @@
+         contentItem: CustomMouseArea {
+             id: mouse
+ 
++            // 本地补丁：页签上的滚轮只负责切页 → 让「切页」那一次出声（ScreenState.dashboardTab），
++            // 这里不再按滚轮格数出声（否则滚到头继续滚、或滚了不生效时都在响）。
++            wheelSfx: false
++
+             function onWheel(event: WheelEvent): void {
+                 if (event.angleDelta.y < 0)
+                     root.screenState.dashboardTab = Math.min(root.screenState.dashboardTab + 1, bar.count - 1);
+--- a/modules/bar/popouts/PopoutState.qml
++++ b/modules/bar/popouts/PopoutState.qml
+@@ -1,8 +1,16 @@
+ import QtQuick
++import qs.services
+ 
+ QtObject {
+     property string currentName
+     property bool hasCurrent
+ 
++    // 本地补丁：竖栏 popout 打开时给一声（它们由 hover 触发，没有点击音会跟它叠）；
++    // 用 hasCurrent 而不是 currentName —— 在图标之间滑动/托盘项之间滑动不再重复响。
++    onHasCurrentChanged: {
++        if (hasCurrent)
++            UiSounds.popout();
++    }
++
+     signal detachRequested(mode: string)
+ }

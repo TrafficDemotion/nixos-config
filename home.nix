@@ -42,6 +42,7 @@
             ./patches/caelestia/0002-wallpaper-page-usable.patch
             ./patches/caelestia/0003-ui-sounds.patch
             ./patches/caelestia/0004-ui-sounds-events.patch
+            ./patches/caelestia/0005-ui-sounds-tab-popout.patch
           ];
       });
 
@@ -577,7 +578,13 @@
     };
     initContent = ''
       zsh-newuser-install() { :; }
-      if command -v fastfetch >/dev/null 2>&1; then
+      # 开终端先播 anifetch 动效：它自己会把 fastfetch 的信息渲在 ASCII 动效右边，
+      # 所以有它就不再单独跑 fastfetch。只在「交互式 + 真终端」里播；
+      # 脚本、非交互 shell、非 TTY（ssh 带命令、管道等）一律退回纯 fastfetch。
+      # 想临时跳过动画：ANI_OFF=1 zsh
+      if [[ -o interactive && -t 1 && -z $ANI_OFF ]] && command -v anifetch >/dev/null 2>&1; then
+        anifetch example.mp4 --loop 1
+      elif command -v fastfetch >/dev/null 2>&1; then
         fastfetch
       fi
       if command -v zoxide >/dev/null 2>&1; then
