@@ -171,6 +171,14 @@
     enable = true;
     type = "fcitx5";
     fcitx5 = {
+      # 只走 Wayland 原生 text-input 通路：不再全局设 GTK_IM_MODULE/QT_IM_MODULE。
+      # 设了这两个（NixOS 模块默认值）会让 GTK/Qt 应用改走「im 模块 + D-Bus」老路，
+      # 而那条路在 Wayland 下没法给候选窗定位 —— fcitx 官方文档明说：候选窗由客户端自己画，
+      # Gtk3 的 xdg_popup 不能重定位，只能用 hide/show 兜，表现为候选栏乱跑/闪烁/发卡。
+      # 关掉后 GTK3/4 用自带的 wayland im 模块（text-input-v3），候选窗由合成器摆位
+      # （Hyprland 实现了 zwp_input_popup_surface_v2）；Qt 6.7+ 同理走 text-input-v3。
+      # XMODIFIERS 仍由模块保留，Xwayland/X11 应用不受影响。
+      waylandFrontend = true;
       addons = with pkgs; [
         qt6Packages.fcitx5-chinese-addons # 中文：拼音 / 双拼 / 五笔 等
         fcitx5-mozc # 日文：Mozc（与上面同一份 fcitx5 core 5.1.19，已验证）
