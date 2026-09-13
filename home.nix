@@ -34,6 +34,8 @@
     #   0007 锁屏精简：锁屏只留密码框（Content 只留 Center 一栏、Center 删掉时钟/日期/头像，
     #        只留密码框+状态行），上锁/解锁只做 opacity 淡入淡出（LockSurface 的 initAnim/unlockAnim
     #        去掉旋转/缩放/圆角回缩与中心锁图标）。
+    #   0008 锁屏密码框：去掉常驻提示「Enter your password」（只去显示、保留量宽，空态密码框
+    #        宽度不变；Loading…/Scanning face… 这类瞬时提示照旧显示）。
     # 锚点对不上会**构建失败**（不会静默失效）：升级外壳前先 `nixos-rebuild build`。
     package =
       inputs.caelestia-shell.packages.${pkgs.stdenv.hostPlatform.system}.with-cli
@@ -48,6 +50,7 @@
             ./patches/caelestia/0005-ui-sounds-tab-popout.patch
             ./patches/caelestia/0006-ui-sounds-drawers-wheel.patch
             ./patches/caelestia/0007-lock-minimal-fade.patch
+            ./patches/caelestia/0008-lock-no-password-hint.patch
           ];
       });
 

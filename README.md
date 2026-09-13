@@ -101,6 +101,7 @@ programs.caelestia.package =
 | `0005-ui-sounds-tab-popout.patch` | `services/UiSounds.qml`、`components/{ScreenState.qml,controls/CustomMouseArea.qml}`、`modules/dashboard/Tabs.qml`、`modules/bar/popouts/PopoutState.qml` | dashboard 切页只在真的换页时响一声；竖栏 popout 打开出声 |
 | `0006-ui-sounds-drawers-wheel.patch` | `modules/drawers/Interactions.qml`、`modules/bar/popouts/PopoutState.qml`、`services/UiSounds.qml` | 抽屉整层滚轮不再空响（只在鼠标确实在竖栏上滚时出声）；popout 收起补一声 |
 | `0007-lock-minimal-fade.patch` | `modules/lock/{Content,Center,LockSurface}.qml` | 锁屏只留密码框（删掉三栏内容与那个大面板、贴屏幕底部）+ 上锁/解锁只做淡入淡出（见下面「锁屏精简」一节） |
+| `0008-lock-no-password-hint.patch` | `modules/lock/center/InputField.qml` | 锁屏密码框不再显示常驻提示 `Enter your password`（**只去显示、保留量宽** → 空态胶囊宽度不变；`Loading…`/`Scanning face…` 这类瞬时提示照旧显示） |
 
 **验收手法（都不依赖肉眼看屏幕）**：
 
@@ -420,6 +421,40 @@ maxFprintTries / enableHowdy / maxHowdyTries / triggerHowdyOnWake / hideNotifs`
   根治是重新登录一次。
 
 **回滚**：`home.nix` 的 patches 列表删掉 0007 那行 + 把 `hypr/hyprland.lua` 里的 `session_lock_xray` 改回 `false`（备份在 `hypr/hyprland.lua.bak-20260913-xray`）→ `nixos-rebuild switch`（QML-only，不编 C++）。
+
+### 锁屏密码框：去掉常驻提示「Enter your password」（`patches/caelestia/0008-lock-no-password-hint.patch`）
+
+诉求：「锁屏密码框的 enter your password 能去掉吗」。
+
+**为什么只能打补丁（先说清，免得再翻一遍）**：锁屏文案全部走 `Tr.tr()`，而语言目录 `*.mo` 是**构建时编译进
+`caelestia-qml-plugin` 的 Qt 资源**里的（`plugin/src/Caelestia/I18n/translator.cpp` 的 `resourceDir()`
+= `:/qt/qml/Caelestia/I18n/`；全机 `/nix/store` 下 `find -name '*.mo'` 一个都没有）。
+`Config.general.language`（Nexus → Language & region 那一页）只能在这些**已编译进二进制的目录**之间选，
+**无法覆盖单条文案**，更没有「把某条文案设成空」的入口；`lockconfig.hpp` 同样不含任何文案开关。
+
+**改了一处**（`modules/lock/center/InputField.qml`）：把那段文字抽成 `hintText` —— **显示**用它、
+**度量**（`TextMetrics id: nonAnimPlaceholder`）在它为空时退回原提示词的宽度。
+
+**为什么度量不能一起清掉**（这次唯一的坑）：`PasswordInput.qml:20` 在 `pam.buffer` 为空时用
+`inputField.placeholderWidth`（= `nonAnimPlaceholder.width`）算密码框的 `implicitWidth`。连度量一起清掉，
+密码框在**输入前**会缩成「锁图标 + 箭头按钮」那么窄（约 90 px），一打字又弹回 `0.8 * centerWidth`。
+所以只清显示、保留量宽 → 空态宽度与打补丁前一致。
+
+**验收（A/B 像素对照，不靠肉眼）**：
+
+```bash
+caelestia-shell ipc call lock lock ; sleep 2.5 ; grim /tmp/lock.png
+caelestia-shell ipc call lock unlock ; caelestia-shell ipc call lock isLocked   # 必须变回 false
+```
+
+实测（2560x1440，对照图 = 0007 时期同一台机器的 `~/notes/lock-0007-locked.png`）：
+**打补丁前** 底部胶囊宽 329 px、胶囊内「文字带」（去掉左图标/右按钮）亮像素 **379**（就是那行字）；
+**打补丁后** 胶囊宽 **331 px**（差值在抗锯齿噪声内）、文字带亮像素 **0**。截图存 `~/notes/lock-0008-nohint.png`。
+
+**保留了瞬时状态文字**：`Loading…` / `Scanning face…` / `Max tries reached` 照旧显示，去掉的只有那个常驻英文提示；
+若连这些也不要，把 `hintText` 里那三个分支删掉即可（同一个补丁）。
+
+**回滚**：`home.nix` 的 patches 列表删掉 0008 那行 → `nixos-rebuild switch`（QML-only，不编 C++）。
 
 ## 已知坑
 
