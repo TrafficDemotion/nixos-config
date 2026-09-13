@@ -314,6 +314,25 @@ ffmpeg -v error -y -f pulse -i sfxevt.monitor -t 12 /tmp/evt.wav &
 只做了「补丁落进 store + 外壳加载无报错」这一步；要确认就自己按一下
 （`Print` / `SUPER+L` / 右下抽屉里的 Record）。
 
+### 修正：dashboard 切页只响一次 + 竖栏 popout 的音（`patches/caelestia/0005-ui-sounds-tab-popout.patch`）
+
+用户反馈两条，根因都是「音挂在滚轮上」而不是挂在「结果」上：
+
+1. **滚轮不生效也响**：dashboard 页签的 `CustomMouseArea.onWheel` 是 `dashboardTab = Math.min/Math.max(…)`
+   （带钳位），滚到第一/最后一页时**值没变、滚轮事件照样来**，而音挂在该共享组件的滚轮分支里 → 一直响。
+   改法：`components/controls/CustomMouseArea.qml` 新增 `property bool wheelSfx: true`，页签那处设
+   `wheelSfx: false`；切页音改挂在**结果**上 —— `components/ScreenState.qml` 的
+   `onDashboardTabChanged: UiSounds.page()`（走 `playIfQuiet`，点页签时被点击音压掉，不会两声）。
+   于是：真换页 = 1 声，滚到头/没换页 = 0 声。
+2. **竖栏 popout 没音**：它们不是点开的 —— `modules/bar/Bar.qml` 的 `checkPopout(y)` 在鼠标移动时按位置
+   判定，`popouts.currentName = <icon.name>` + `hasCurrent = true` 就开了。改法：挂
+   `modules/bar/popouts/PopoutState.qml` 的 `onHasCurrentChanged`（只在 false→true 出声；用 `hasCurrent`
+   而不是 `currentName`，这样在图标之间滑动、托盘项之间滑动都不会重复响）。
+
+验收（不需要按键）：`hyprctl dispatch 'hl.dsp.cursor.move({x=3,y=1310})'` 把光标移到左边栏蓝牙图标上
+→ 内录捕获到 **-3.0 dB** 一声，同时 `grim` 截图确认 Bluetooth popout 已弹出。
+dashboard 切页那半只能真滚轮验证（Hyprland 不能注入滚轮事件），确认到「补丁进 store + 外壳无报错」为止。
+
 ## 已知坑
 
 1. **直通核显的显示器检测**：guest 收不到 HPD 中断，开机那一刻没接显示器的输出口一律认不到。
