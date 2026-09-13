@@ -41,6 +41,7 @@
             ./patches/caelestia/0001-brightness-selfheal.patch
             ./patches/caelestia/0002-wallpaper-page-usable.patch
             ./patches/caelestia/0003-ui-sounds.patch
+            ./patches/caelestia/0004-ui-sounds-events.patch
           ];
       });
 
@@ -175,14 +176,10 @@
   # ═══════════════════ UI 交互音效素材（pixel） ═══════════════════
   # 音源 = AOSP/LineageOS 的 UI 音（data/sounds/effects/Effect_Tick.ogg，Apache-2.0），
   # 用 ffmpeg 转成 48k 立体声 wav、按事件做了音高/音量区分，落在 ~/.local/share/sfx/
-  # （这里声明 → 进 nix store，随 generation 回滚）。播放方是 hypr/hyprland.lua 里的
-  # hl.on(...) 事件（pw-play）；Caelestia 外壳自己没有任何音效接口。
-  #   三种音的实际参数（源峰值→施加增益→成品峰值）：
-  #     window-open      原始音高                      → -6 dB
-  #     window-close     音高 ×0.84（低一点）          → -9 dB
-  #     workspace-switch 音高 ×1.18（高一点、更轻）    → -12 dB
-  #   原始 ogg 与其它 AOSP UI 音（Dock/Undock/Lock/Unlock/camera_click/VideoRecord/
-  #   VideoStop）的下载与 ffmpeg 转换命令见 README「UI 交互音效」一节。
+  # （这里声明 → 进 nix store，随 generation 回滚）。播放方 2026-09-13 起基本都在外壳里
+  # （patches/caelestia/0003 组件级 + 0004 事件级，pw-play），只有剪贴板/emoji 那两条
+  # 键盘触发还在 hypr/hyprland.lua 里（fuzzel 是外部进程，外壳看不到）。
+  #   各音的实际参数（源峰值→施加增益→成品峰值）见 README「UI 交互音效」一节。
   xdg.dataFile = {
     "sfx/window-open.wav".source = ./sfx/window-open.wav;
     "sfx/window-close.wav".source = ./sfx/window-close.wav;
@@ -194,6 +191,10 @@
     "sfx/ui-toggle-on.wav".source = ./sfx/ui-toggle-on.wav;
     "sfx/ui-toggle-off.wav".source = ./sfx/ui-toggle-off.wav;
     "sfx/ui-scroll.wav".source = ./sfx/ui-scroll.wav;
+    # 事件级（patches/caelestia/0004-ui-sounds-events.patch）
+    "sfx/unlock.wav".source = ./sfx/unlock.wav;
+    "sfx/video-record.wav".source = ./sfx/video-record.wav;
+    "sfx/video-stop.wav".source = ./sfx/video-stop.wav;
   };
 
   # ── 重启外壳时别再连带杀掉它拉起来的应用（2026-09-13 用户要求）──

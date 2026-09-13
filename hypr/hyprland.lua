@@ -66,20 +66,20 @@ end)
 ------------------------------
 ----  UI 交互音效（pixel）----
 ------------------------------
+-- 主体已搬进外壳的 QML 补丁（patches/caelestia/0003 + 0004，2026-09-13）：
+--   窗口开/关、切工作区        → services/Hypr.qml（toplevels 模型增删 + focusedWorkspace 变化）
+--   面板开合（启动器/仪表盘/电源菜单/侧边栏/右下抽屉/OSD）
+--                              → components/ScreenState.qml（那几个布尔值变化，含鼠标点与 IPC 触发）
+--   截图快门（Print / Super+Shift+S / +Alt+S）→ modules/areapicker/AreaPicker.qml（activeAsync）
+--   锁屏 + 解锁                → modules/lock/Lock.qml（locked 变化；解锁原先没有事件可挂）
+--   录屏开始/结束              → services/Recorder.qml（running 变化）
+--   点击 / 开关 / 滑条 / 滚轮  → 共享组件（StateLayer / StyledSwitch / Filled*Slider / CustomMouseArea）
+-- 音效总开关：home.nix 里 programs.caelestia.systemd.environment = [ "CAELESTIA_UI_SOUNDS=0" ]。
+-- ⚠️ 只有下面两条还留在这里：剪贴板与 emoji 是**外部 fuzzel 进程**（`caelestia clipboard` /
+--    `caelestia emoji` 都只是 `fuzzel --dmenu`），外壳看不到它们开合，QML 侧挂不上。
 -- 素材：AOSP/LineageOS 的 UI 音，ffmpeg 转 48k 立体声（命令见 README「UI 交互音效」），
--- 文件由 home.nix 的 xdg.dataFile 声明 → ~/.local/share/sfx/（在 nix store 里）：
---   window-open.wav      新窗口                        peak -3 dB
---   window-close.wav     关窗口                        peak -6 dB
---   workspace-switch.wav 切工作区 / 打开外壳面板        peak -9 dB
---   camera-shutter.wav   截图（Print / Super+Shift+S）  peak -5 dB
---   lock.wav             锁屏（Super+L）                peak -5 dB
--- 播放用 pw-play（PipeWire 自带；本机没有 pulseaudio/paplay）。
--- ⚠️ 单条 ≈100–140 ms（实测 pw-play 的起流开销，空闲与否都一样，不是音箱唤醒慢）——
---    这就是「事件已发生、声音慢半拍」的来源，也是这条路线延迟的下限。想更快只能让声音
---    在外壳进程内播（QtMultimedia 的 SoundEffect），那要改 QML 且给壳加 qtmultimedia 依赖。
--- ⚠️ 这里只覆盖「Hyprland 能看到的事」：窗口/工作区事件 + **键盘触发的**外壳面板。
---    鼠标点栏上的图标、点启动器里的条目、通知弹出 —— Hyprland 一概看不见，要那些只能改 QML。
--- 关掉：把 sfxEnabled 改成 false（整段就静默了）。
+-- 文件由 home.nix 的 xdg.dataFile 声明 → ~/.local/share/sfx/（在 nix store 里）。
+-- 播放用 pw-play（PipeWire 自带）。关掉：把 sfxEnabled 改成 false。
 local sfxEnabled = true
 local sfxDir = "/home/paan/.local/share/sfx/"
 
@@ -90,19 +90,12 @@ local function playSfx(file)
 end
 
 -- 「先出声、再干活」：同一次按键里既放音又派发原动作。
--- hl.dispatch() 是官方 API（`hl.meta.lua` 的 `HL.dispatch fun(dispatcher|function)`），
--- 实测它既接受 dispatcher 也接受函数，函数体里那句 pw-play 会照常执行。
 local function bindSfx(file, dispatcher)
   return function()
     playSfx(file)
     hl.dispatch(dispatcher)
   end
 end
-
--- ── 窗口 / 工作区（Hyprland 事件回调）──
-hl.on("window.open", function(_) playSfx("window-open.wav") end) -- 新窗口
-hl.on("window.close", function(_) playSfx("window-close.wav") end) -- 关窗口
-hl.on("workspace.active", function(_) playSfx("workspace-switch.wav") end) -- 切工作区
 
 ------------------------
 ----  外观 / 动画  ----
@@ -205,11 +198,11 @@ hl.config({
 local mainMod = "SUPER"
 
 -- Caelestia：面板 / 会话 / 通知
-hl.bind("SUPER + SUPER_L", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:launcher")), { release = true }) -- 单按 Win 键 = 启动器
-hl.bind(mainMod .. " + K", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:showall"))) -- 仪表盘（显示所有面板）
-hl.bind(mainMod .. " + N", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:sidebar"))) -- 侧边栏
-hl.bind("CTRL + ALT + Delete", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:session"))) -- 电源菜单
-hl.bind(mainMod .. " + L", bindSfx("lock.wav", hl.dsp.global("caelestia:lock"))) -- 锁屏（Caelestia 内置，背景已改壁纸；解锁没有事件可挂）
+hl.bind("SUPER + SUPER_L", hl.dsp.global("caelestia:launcher"), { release = true }) -- 单按 Win 键 = 启动器
+hl.bind(mainMod .. " + K", hl.dsp.global("caelestia:showall")) -- 仪表盘（显示所有面板）
+hl.bind(mainMod .. " + N", hl.dsp.global("caelestia:sidebar")) -- 侧边栏
+hl.bind("CTRL + ALT + Delete", hl.dsp.global("caelestia:session")) -- 电源菜单
+hl.bind(mainMod .. " + L", hl.dsp.global("caelestia:lock")) -- 锁屏（Caelestia 内置，背景已改壁纸；解锁没有事件可挂）
 hl.bind("CTRL + ALT + C", hl.dsp.global("caelestia:clearNotifs"), { locked = true })
 
 -- 应用
@@ -262,9 +255,9 @@ hl.bind("ALT + mouse:272", hl.dsp.window.drag(), { mouse = true })
 hl.bind("ALT + mouse:273", hl.dsp.window.resize(), { mouse = true })
 
 -- 截图 / 录屏（Caelestia）
-hl.bind("Print", bindSfx("camera-shutter.wav", hl.dsp.exec_cmd("caelestia screenshot")), { locked = true })
-hl.bind(mainMod .. " + SHIFT + S", bindSfx("camera-shutter.wav", hl.dsp.global("caelestia:screenshotFreeze")))
-hl.bind(mainMod .. " + SHIFT + ALT + S", bindSfx("camera-shutter.wav", hl.dsp.global("caelestia:screenshot")))
+hl.bind("Print", hl.dsp.exec_cmd("caelestia screenshot"), { locked = true })
+hl.bind(mainMod .. " + SHIFT + S", hl.dsp.global("caelestia:screenshotFreeze"))
+hl.bind(mainMod .. " + SHIFT + ALT + S", hl.dsp.global("caelestia:screenshot"))
 hl.bind("CTRL + ALT + R", hl.dsp.exec_cmd("caelestia record"))
 
 -- 剪贴板 / emoji（Caelestia CLI + fuzzel）

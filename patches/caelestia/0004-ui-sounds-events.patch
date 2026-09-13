@@ -1,0 +1,179 @@
+UI 交互音效（QML 补丁 2/2）：把原来挂在 Hyprland Lua 上的音效搬进外壳
+
+接续 0003（组件级点击/开关/滑条/滚轮），这一张把「事件级」的也搬过来：
+  services/Hypr.qml          window.open/close（toplevels 模型增删）+ workspace.active
+  components/ScreenState.qml 抽屉/面板开合（launcher/dashboard/session/sidebar/utilities/osd）
+  modules/areapicker/AreaPicker.qml  截图快门（8 个入口共用 activeAsync）
+  modules/lock/Lock.qml      锁屏 + 解锁（解锁在 Lua 那套里无事件可挂）
+  services/Recorder.qml      录屏开始/结束
+并给 UiSounds 加 playIfQuiet()：面板开合紧跟一次点击音时，250ms 内不再重复出声。
+--- a/services/UiSounds.qml
++++ b/services/UiSounds.qml
+@@ -22,6 +22,9 @@
+     // 同一文件的最小间隔（毫秒）——拖动/连点时别糊成一片
+     property var lastPlayed: ({})
+ 
++    // 任何一条音最后响的时刻——用于「刚响过就别再响」
++    property real lastAny: 0
++
+     function play(file: string, minInterval: int): void {
+         if (!enabled)
+             return;
+@@ -29,7 +32,15 @@
+         if (now - (lastPlayed[file] ?? 0) < minInterval)
+             return;
+         lastPlayed[file] = now;
++        lastAny = now;
+         Quickshell.execDetached(["pw-play", dir + file]);
++    }
++
++    // 面板开合常常紧跟着一次点击音 → 250ms 内已经响过就跳过，免得一次操作听成两声
++    function playIfQuiet(file: string, minInterval: int, quietMs: int): void {
++        if (!enabled || Date.now() - lastAny < quietMs)
++            return;
++        play(file, minInterval);
+     }
+ 
+     // 通用点击：按钮 / 列表条目 / 栏上图标 / tile / 启动器条目 …
+@@ -46,4 +57,34 @@
+     function slider(): void {
+         play("ui-scroll.wav", 90);
+     }
++
++    // ── 事件类：窗口 / 工作区 / 面板 / 截图 / 锁屏 / 录屏 ──────────────────────
++    // 这些原来挂在 Hyprland 的 Lua 上（2026-09-13 搬进外壳，见 patches/caelestia/0004）
++    function windowOpen(): void {
++        play("window-open.wav", 40);
++    }
++
++    function windowClose(): void {
++        play("window-close.wav", 40);
++    }
++
++    function workspace(): void {
++        play("workspace-switch.wav", 60);
++    }
++
++    function panel(): void {
++        playIfQuiet("workspace-switch.wav", 120, 250);
++    }
++
++    function shutter(): void {
++        play("camera-shutter.wav", 300);
++    }
++
++    function lockState(on: bool): void {
++        play(on ? "lock.wav" : "unlock.wav", 400);
++    }
++
++    function record(on: bool): void {
++        play(on ? "video-record.wav" : "video-stop.wav", 400);
++    }
+ }
+--- a/services/Hypr.qml
++++ b/services/Hypr.qml
+@@ -212,4 +212,34 @@
+ 
+         usingLua: Hyprland.usingLua
+     }
++
++    // ── 本地补丁：窗口/工作区音效（原来挂在 Hyprland 的 Lua 上，2026-09-13 搬进外壳）──
++    // Hyprland.toplevels 是 UntypedObjectModel：新窗口 → objectInsertedPost，关窗 → objectRemovedPre。
++    // soundsReady 用来吃掉「外壳刚启动时对已有窗口」的那一批事件（否则一开就响一串）。
++    property bool soundsReady: false
++
++    Timer {
++        interval: 2000
++        running: true
++        onTriggered: root.soundsReady = true
++    }
++
++    onFocusedWorkspaceChanged: {
++        if (soundsReady)
++            UiSounds.workspace();
++    }
++
++    Connections {
++        target: Hyprland.toplevels
++
++        function onObjectInsertedPost(): void {
++            if (root.soundsReady)
++                UiSounds.windowOpen();
++        }
++
++        function onObjectRemovedPre(): void {
++            if (root.soundsReady)
++                UiSounds.windowClose();
++        }
++    }
+ }
+--- a/services/Recorder.qml
++++ b/services/Recorder.qml
+@@ -14,6 +14,9 @@
+     property list<string> startArgs
+     property bool needsStop
+     property bool needsPause
++
++    // 本地补丁：录屏开始/结束音
++    onRunningChanged: UiSounds.record(running)
+ 
+     function start(extraArgs = []): void {
+         needsStart = true;
+--- a/components/ScreenState.qml
++++ b/components/ScreenState.qml
+@@ -1,4 +1,5 @@
+ import Quickshell
++import qs.services
+ 
+ PersistentProperties {
+     required property ShellScreen modelData
+@@ -12,6 +13,14 @@
+     property bool utilities
+     property bool sidebar
+ 
++    // 本地补丁：抽屉/面板开合音。`bar` 不挂（它是竖栏本身的显示状态，鼠标一动就变）。
++    onOsdChanged: UiSounds.panel()
++    onSessionChanged: UiSounds.panel()
++    onLauncherChanged: UiSounds.panel()
++    onDashboardChanged: UiSounds.panel()
++    onUtilitiesChanged: UiSounds.panel()
++    onSidebarChanged: UiSounds.panel()
++
+     // Dashboard state
+     property int dashboardTab
+     property date dashboardDate: new Date()
+--- a/modules/areapicker/AreaPicker.qml
++++ b/modules/areapicker/AreaPicker.qml
+@@ -14,6 +14,12 @@
+         property bool freeze
+         property bool closing
+         property bool clipboardOnly
++
++        // 本地补丁：截图快门音（8 个入口都设 activeAsync = true，这里一处覆盖）
++        onActiveAsyncChanged: {
++            if (activeAsync)
++                UiSounds.shutter();
++        }
+ 
+         Variants {
+             model: Screens.screens
+--- a/modules/lock/Lock.qml
++++ b/modules/lock/Lock.qml
+@@ -5,6 +5,7 @@
+ import Quickshell.Io
+ import Quickshell.Wayland
+ import qs.components.misc
++import qs.services
+ 
+ Scope {
+     property alias lock: lock
+@@ -13,6 +14,9 @@
+         id: lock
+ 
+         signal unlock
++
++        // 本地补丁：锁屏/解锁音（keybind 与空闲自动锁屏都走这里；解锁是 Lua 那套做不到的）
++        onLockedChanged: UiSounds.lockState(locked)
+ 
+         LockSurface {
+             lock: lock
