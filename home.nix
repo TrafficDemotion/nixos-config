@@ -646,6 +646,20 @@
     GDK_BACKEND = "wayland,x11";
   };
 
+  # ═══════════════════ 光标主题（Windows 11 / Jepri，「candy」深色小号）═══════════════════
+  # 主题本体**不进 nix store、不进这个公开仓库**：包自带的 Agreement.txt 明确禁止再分发
+  # （"You're NOT allowed to Distribute the pack files in any way"），所以转换后的 xcursor
+  # 主题以本机资产形式放在 ~/.local/share/icons/W11-dark-candy-small/，重建配方见 README
+  # 「光标主题」一节（换机器/重装要照它重做一次）。
+  # 被找到靠 XCURSOR_PATH（/etc/set-environment 里已含 $HOME/.local/share/icons）；
+  # 用哪个名字由 hypr/hyprland.lua 的 hl.env("XCURSOR_THEME"/"HYPRCURSOR_THEME") 指定。
+  # 这里补的是 GTK/X11 那一路：它们读 gsettings(dconf)，不看环境变量。
+  # （HM 的开关叫 `dconf.enable`，默认就开；系统侧 `programs.dconf.enable` 已在 configuration.nix 打开。）
+  dconf.settings."org/gnome/desktop/interface" = {
+    cursor-theme = "W11-dark-candy-small";
+    cursor-size = 32;
+  };
+
   # ═══════════════════ zsh ═══════════════════
   programs.zsh = {
     enable = true;

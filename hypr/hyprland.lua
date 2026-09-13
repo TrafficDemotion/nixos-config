@@ -37,8 +37,17 @@ local files = "kitty -e yazi"
 ------------------------
 ----  环境变量  ----
 ------------------------
-hl.env("XCURSOR_SIZE", "24")
-hl.env("HYPRCURSOR_SIZE", "24")
+-- 光标主题：Windows 11 by Jepri Creations 的「candy」深色小号版（dark/small/09. candy）。
+-- 主题本体是 xcursor 格式，放在本机 ~/.local/share/icons/W11-dark-candy-small/
+-- （包自带的 Agreement.txt 禁止再分发 → 不进这个公开仓库、也不进 nix store；
+--  它靠 /etc/set-environment 的 XCURSOR_PATH 被找到，重建配方见 README）。
+-- 主题名是从环境变量读的 → **只在 Hyprland 启动时生效**；当前会话想立刻换就用
+--   hyprctl setcursor W11-dark-candy-small 32
+-- 尺寸 32＝包内原生像素（图里有 32/48/64/96 四档，libXcursor 不缩放：写 24 也会拿 32 那张）。
+hl.env("XCURSOR_THEME", "W11-dark-candy-small")
+hl.env("HYPRCURSOR_THEME", "W11-dark-candy-small")
+hl.env("XCURSOR_SIZE", "32")
+hl.env("HYPRCURSOR_SIZE", "32")
 hl.env("NIXOS_OZONE_WL", "1") -- Chromium / Electron 走原生 Wayland
 hl.env("ELECTRON_OZONE_PLATFORM_HINT", "auto")
 hl.env("MOZ_ENABLE_WAYLAND", "1") -- Firefox 走 Wayland

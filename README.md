@@ -456,6 +456,83 @@ caelestia-shell ipc call lock unlock ; caelestia-shell ipc call lock isLocked   
 
 **回滚**：`home.nix` 的 patches 列表删掉 0008 那行 → `nixos-rebuild switch`（QML-only，不编 C++）。
 
+## 光标主题（Windows 11 by Jepri，「candy」深色小号）
+
+用户要的是 NAS 上那套 `W11cursor-by-Jepri`（`…/(__Win__)/(__Win-customize__)/W11cursor-by-Jepri/`），
+本机取的是 `dark/small/09. candy`。Windows 的 `.cur/.ani` 必须转成 Linux 的 xcursor 主题才能用。
+
+**包体不进这个公开仓库**：包根的 `Agreement.txt` 写明只允许个人使用/修改、**不允许以任何方式再分发**
+（"You're NOT allowed to Distribute the pack files in any way"），而本仓库是 public。所以转换产物是
+**本机资产**：`~/.local/share/icons/W11-dark-candy-small/`，不进 nix store、不随 generation 回滚，
+`git clone` 恢复后要照下面配方重做一次（约 1 分钟）。
+
+```bash
+# 1) 取包内一档到临时目录（base/*.cur ＝ 15 个静态光标；09. candy/*.ani ＝ 只有动图两个，
+#    01~10 那十个变体目录都只放 working.ani/busy.ani，区别是动图配色）
+B="/mnt/truenas/DATA/(__Win__)/(__Win-customize__)/W11cursor-by-Jepri/dark/small"
+rm -rf /tmp/w11src && mkdir -p /tmp/w11src && cp "$B/base"/*.cur "$B/09. candy"/*.ani /tmp/w11src/
+
+# 2) Windows → xcursor（win2xcur 在 nixpkgs 里，nix run 临时用一次即可，不必写进配置）
+THEME="$HOME/.local/share/icons/W11-dark-candy-small"
+rm -rf "$THEME" && mkdir -p "$THEME/cursors"
+nix run nixpkgs#win2xcur -- /tmp/w11src/*.cur /tmp/w11src/*.ani -o "$THEME/cursors"
+printf '[Icon Theme]\nName=W11-dark-candy-small\nComment=Windows 11 cursors (dark/small, "candy") by Jepri Creations - personal use\n' > "$THEME/index.theme"
+
+# 3) 补标准光标名：Windows 那 19 个名字（pointer/link/vert…）不是 Linux 客户端要的名字，
+#    Linux 侧要 left_ptr、hand2、nwse-resize、progress… 下面这张"实体名 → 别名"表把两边对上。
+cd "$THEME/cursors" && while read -r t rest; do [ -z "$t" ] && continue; for a in $rest; do
+  [ "$a" = "$t" ] && continue; [ -e "$a" ] && continue; ln -sf "$t" "$a"; done; done <<'MAP'
+pointer default left_ptr arrow top_left_arrow context-menu alias copy dnd-none
+beam text xterm ibeam cell vertical-text
+link hand hand1 hand2 pointing_hand
+help question_arrow left_ptr_help whats_this
+working progress left_ptr_watch half-busy
+busy wait watch
+precision crosshair cross tcross plus
+handwriting pencil draft
+unavailable not-allowed crossed_circle no-drop dnd-no-drop forbidden
+vert ns-resize n-resize s-resize row-resize size_ver v_double_arrow sb_v_double_arrow top_side bottom_side
+horz ew-resize e-resize w-resize col-resize size_hor h_double_arrow sb_h_double_arrow left_side right_side
+dgn1 nwse-resize nw-resize se-resize size_fdiag top_left_corner bottom_right_corner
+dgn2 nesw-resize ne-resize sw-resize size_bdiag top_right_corner bottom_left_corner
+move move fleur all-scroll size_all dnd-move
+alternate up_arrow center_ptr
+person person
+pin pin
+MAP
+```
+
+接进配置的只有三处（主题文件本身是资产，其余全是声明式）：
+
+| 谁 | 在哪 | 怎么设 |
+|---|---|---|
+| Hyprland 自己 + 终端等子进程 | `hypr/hyprland.lua` | `hl.env("XCURSOR_THEME"/"HYPRCURSOR_THEME", …)`、`XCURSOR_SIZE/HYPRCURSOR_SIZE = 32` |
+| GTK3/4、X11 应用 | `home.nix` | `programs.dconf.enable = true;` + `dconf.settings."org/gnome/desktop/interface"` 的 `cursor-theme`/`cursor-size` |
+| 谁来找到这个主题 | `/etc/set-environment` | 不用动：`XCURSOR_PATH` 已含 `$HOME/.local/share/icons` |
+
+要知道的事实（都实测过）：
+
+- 包里 `.cur` 内是 **32/48/64/96 四档**、`.ani` 是 37 帧；转出来的 xcursor 多尺寸都在，
+  动画帧也在（`progress`/`wait` 实测 `frames=37`）。
+- **libXcursor 不缩放**：请求 24 也拿 32 那张、请求 48 拿 48 那张。想要别的尺寸只能用
+  `win2xcur --scale <系数>` 重转一套，改 `XCURSOR_SIZE` 不会让图变小。
+- `.ani` 的**帧延时**在 xcursor 格式里没地方存 → 动图会不会动、以多快动，取决于合成器/hyprcursor。
+- **主题名只在 Hyprland 启动时读一次**：rebuild 后当前会话不会变。想立刻看效果：
+  `hyprctl setcursor W11-dark-candy-small 32`（runtime-only，下次起会话回到 env 的值）。
+- 验证手法（不用人看屏幕）：`~/notes/cursor-probe.c` 是个 40 行的 libwayland-cursor 探针，
+  按**主题名**加载（就是 compositor 取光标的路径），打印每个形状的首帧尺寸与 hotspot：
+  真主题 → `frame0=32x32 hotspot=3,9` 且各形状 OK；**随便编个主题名也会"加载成功"**，
+  只是退到内置 **10x16** 小箭头（`wl_cursor_theme_load` 不返回 NULL）→ 所以只判"能不能加载"没意义，
+  要看尺寸。编译与用法：
+  ```bash
+  export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1
+  export XCURSOR_PATH="$HOME/.icons:$HOME/.local/share/icons:/etc/profiles/per-user/$USER/share/icons:/run/current-system/sw/share/icons"
+  WL_DEV=$(nix build --no-link --print-out-paths nixpkgs#wayland.dev); WL=$(nix build --no-link --print-out-paths nixpkgs#wayland)
+  gcc ~/notes/cursor-probe.c -I"$WL_DEV/include" -L"$WL/lib" -L"$WL_DEV/lib" -lwayland-client -lwayland-cursor -o /tmp/cursor-probe
+  /tmp/cursor-probe W11-dark-candy-small 32 default left_ptr text hand2 progress
+  ```
+- `hyprctl setcursor` 对**不存在的主题也返回 `ok` 且不写任何日志** → 不能用它判断有没有生效。
+
 ## 已知坑
 
 1. **直通核显的显示器检测**：guest 收不到 HPD 中断，开机那一刻没接显示器的输出口一律认不到。
@@ -477,6 +554,9 @@ caelestia-shell ipc call lock unlock ; caelestia-shell ipc call lock isLocked   
    `systemctl --user restart caelestia`（或 `ddcutil -b 4 setvcp 10 <n>` 临时绕开外壳）。
 7. **改 Caelestia settings 会重启外壳**，连带把它 cgroup 里的 librewolf/kitty 一起杀掉；
    动手前 `hyprctl layers | grep session-lock` 确认没锁屏。
+8. **光标主题是"本机资产"，不在仓库里**（包授权禁止再分发，见「光标主题」一节）：
+   换机器/重装后 `XCURSOR_THEME` 指向的名字找不到 → 静默退到 compositor 内置的 10x16 小箭头，
+   照 README 那节的配方重做一次主题目录即可（不用改 nix 配置）。
 
 ## 桌面约定
 
