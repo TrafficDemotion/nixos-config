@@ -102,7 +102,21 @@
       ];
       services = {
         dataUnits = "Decimal";
+        # 24 小时制（Nexus → Language & region → Clock format；上游默认按 locale 猜，这里写死）。
         useTwelveHourClock = false;
+        # 所有温度默认摄氏度（2026-09-13 用户要求；Nexus → Language & region → Units 的两栏）。
+        #   weatherUnits 管天气温度（上游按 locale 猜测量制，本机虽是公制，显式写出来更稳）；
+        #   sensorUnits 管 CPU/GPU 这类系统温度（上游默认本来就是 Celsius，这里同样显式声明）。
+        # 枚举值在 JSON 里按名字存（Settings/codecs.hpp 的 EnumCodec → QMetaEnum::keyToValue），
+        # 可取值 Celsius / Fahrenheit / Kelvin（enums.hpp 的 TemperatureUnit）。
+        weatherUnits = "Celsius";
+        sensorUnits = "Celsius";
+        # 滚轮/加减步进改成 3%（2026-09-13 用户要求；Nexus → Services → Input increments 的
+        # "Volume step" / "Brightness step"，界面显示值就是这两个 ×100 —— 界面上要看到 3）。
+        # 消费方：竖栏滚轮（modules/bar/Bar.qml 音量走 Audio.incrementVolume、亮度直接加）、
+        # OSD 的 +/- 按钮（modules/osd/Content.qml）、Nexus 滑条两侧加减（SliderRow.qml）。
+        audioIncrement = 0.03;
+        brightnessIncrement = 0.03;
       };
       # 锁屏背景用壁纸，不要用 screencopy 截屏：本机屏幕是内核 EDID 假负载出来的
       # （叠加 Sunshine 自身还在 screencopy），锁屏时截屏会让 quickshell 的
@@ -114,6 +128,10 @@
       # 要关必须改 QML（重建 shell），所以这里只做到「关标签页」这一层。
       dashboard.showDashboard = false;
       dashboard.showWeather = false;
+      # 主面板时钟显示秒（2026-09-13 用户要求；Nexus → Dashboard → General → "Show clock seconds"）。
+      # 它作用的正是上面被关掉的 Dash 标签里的那个时钟（modules/dashboard/dash/DateTime.qml:49,62），
+      # 所以这条先写进声明：标签页不开的话暂时看不到效果。
+      dashboard.showClockSeconds = true;
       # 左侧竖栏改成非常驻（2026-09-12 用户要求）：Caelestia 1.0 的 bar 是屏幕**左侧竖栏**，
       # 上游默认 bar.persistent=true 会一直显示并占位。设 false 后它平时缩回左边框，鼠标贴到
       # 屏幕最左侧约 10px（= border.thickness）才滑出，鼠标一离开就缩回 —— 和 dashboard /
@@ -144,10 +162,46 @@
         { id = "statusIcons"; enabled = true; }
         { id = "power"; enabled = true; }
       ];
-      # 工作区指示器显示 10 个（上游默认 5，2026-09-13 用户要求）—— 就是竖栏里那串圆角小胶囊，
-      # 点击/滚轮都作用在它上面，配合 hyprland.lua 里 SUPER+1..0 的十个工作区绑定。
-      # 图形界面里对应 Nexus → Panels → Workspaces → "Shown"（1..20），但界面里存不下来（只读）。
-      bar.workspaces.shown = 10;
+      # 工作区指示器显示 12 个（上游默认 5；2026-09-13 先从 5 调到 10，同日再调到 12）—— 就是
+      # 竖栏里那串圆角小胶囊，点击/滚轮都作用在它上面。
+      # 图形界面里对应 Nexus → Taskbar → Workspaces → "Shown"（1..20），但界面里存不下来（只读）。
+      # 注意 hyprland.lua 里的 SUPER+数字 绑定目前只覆盖 1..0 十个：11、12 号工作区只能靠滚轮
+      # 或另加绑定（`hl.dsp.focus({ workspace = "e+1" })` 那套）切过去。
+      bar.workspaces.shown = 12;
+      # ── 2026-09-13 用户要求：Caelestia 图形设置里找得到的这批开关，全部写进声明 ──
+      # （Nexus → Taskbar 各子页 / Services / Notifications；键名逐条对应如下）
+      # Taskbar → Clock → "Show icon"：关。竖栏时钟只留时间文字，不画时钟图标。
+      bar.clock.showIcon = false;
+      # Taskbar → Tray → "Background" 与 "Compact"：都开（托盘加底衬、紧凑排布）。
+      bar.tray.background = true;
+      bar.tray.compact = true;
+      # Taskbar → Active window → "Show on hover" 与 "Popout on hover"：都关。
+      # 注意 "Popout on hover" 这个开关在界面上属于 Active window 子页，但存的是
+      # bar.popouts.activeWindow（BarActiveWindow.qml:44-45），不在 bar.activeWindow 里；
+      # 而 activeWindow 这个 entry 本身在 bar.entries 里已是 enabled=false（整块不显示）——
+      # 这两条属于「哪天把那个 entry 打开」时的行为声明。
+      bar.activeWindow.showOnHover = false;
+      bar.popouts.activeWindow = false;
+      # Taskbar → Workspaces → 两个装饰开关：Active trail（活动区前拖一条轨迹）与
+      # Occupied background（有窗口的工作区加深底色）都开；"Max window icons"（每个工作区最多
+      # 画几个窗口图标）从默认 5 改成 3。
+      bar.workspaces.activeTrail = true;
+      bar.workspaces.occupiedBg = true;
+      bar.workspaces.maxWindowIcons = 3;
+      # Taskbar → Status icons：加回 Microphone（id 就是 microphone）与 Speakers（id 是 audio）、
+      # 去掉 Battery。⚠️ 又是**整份清单替换**（理由同上面的 bar.entries）：按上游默认顺序写全
+      # 七项、只翻这三个 enabled。上游默认见 barconfig.hpp 的 CONFIG_LIST(EntryList, statusIcons, …)：
+      #   lockStatus(true), audio(false), microphone(false), kbLayout(false), network(true),
+      #   bluetooth(true), battery(true)
+      bar.statusIcons = [
+        { id = "lockStatus"; enabled = true; }
+        { id = "audio"; enabled = true; }
+        { id = "microphone"; enabled = true; }
+        { id = "kbLayout"; enabled = false; }
+        { id = "network"; enabled = true; }
+        { id = "bluetooth"; enabled = true; }
+        { id = "battery"; enabled = false; }
+      ];
       # 启动器 fuzzy search 五项全开（2026-09-12）。上游默认五项都是 false（走 fzf 的精确/前缀匹配），
       # 打开后列表改用模糊匹配：apps / actions / schemes / variants / wallpapers。
       # 依据：LauncherPanel.qml 的 "Fuzzy search" 分区就是这五项，写 GlobalConfig.launcher.useFuzzy.*；
@@ -161,6 +215,25 @@
         variants = true;
         wallpapers = true;
       };
+      # Services → Notifications 页的 Toasts 这批（2026-09-13 用户要求）：
+      #   "Show in fullscreen" 选 On —— 存的值是 "all"（界面三项 off / important / all 对应
+      #     toastFullscreenValues，见 NotificationsPage.qml:38）；
+      #   "Visible toasts" 7 个（utilities.maxToasts，上游默认 4）。
+      utilities.toasts.fullscreen = "all";
+      utilities.maxToasts = 7;
+      # Utilities → Quick toggles：Bluetooth、Microphone（id 是 mic）、Game mode 三个关掉
+      # （卡片上不再出现这三个按钮）。⚠️ 第三份**整份清单替换**：按上游默认顺序写全七项，
+      # 见 utilitiesconfig.hpp 的 CONFIG_LIST(EntryList, quickToggles, …)：
+      #   wifi, bluetooth, mic, settings, gameMode, dnd, vpn(false) —— 只翻那三个 enabled。
+      utilities.quickToggles = [
+        { id = "wifi"; enabled = true; }
+        { id = "bluetooth"; enabled = false; }
+        { id = "mic"; enabled = false; }
+        { id = "settings"; enabled = true; }
+        { id = "gameMode"; enabled = false; }
+        { id = "dnd"; enabled = true; }
+        { id = "vpn"; enabled = false; }
+      ];
     };
   };
 
