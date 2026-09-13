@@ -1,0 +1,36 @@
+Nexus: 壁纸交给 awww 时仍显示预览、Wallpapers 按钮可用
+
+background.wallpaperEnabled=false（壁纸由 aww 画）时上游把预览换成
+「Wallpaper disabled」并禁用 Wallpapers 按钮，导致 Nexus 里换不了壁纸。
+
+--- a/modules/nexus/pages/WallpaperAndStyle.qml
++++ b/modules/nexus/pages/WallpaperAndStyle.qml
+@@ -41,7 +41,10 @@
+ 
+             Loader {
+                 anchors.centerIn: parent
+-                opacity: Config.background.wallpaperEnabled ? 0 : 1
++                // 本地补丁（patches/caelestia/0002-wallpaper-page-usable.patch）：
++                // 本机壁纸由 awww 画，外壳的 wallpaperEnabled 恒为 false，但屏幕上
++                // 确实有壁纸（Wallpapers.current 有效）→ 不再显示「Wallpaper disabled」。
++                opacity: 0
+                 active: opacity > 0
+ 
+                 sourceComponent: ColumnLayout {
+@@ -71,7 +74,7 @@
+ 
+             Item {
+                 anchors.fill: parent
+-                opacity: Config.background.wallpaperEnabled ? 1 : 0
++                opacity: 1 // 本地补丁：外壳不画壁纸（awww 画），但预览依旧显示当前壁纸
+ 
+                 Behavior on opacity {
+                     Anim {
+@@ -154,7 +157,6 @@
+                 type: IconTextButton.Tonal
+                 horizontalPadding: Tokens.padding.extraLarge
+                 verticalPadding: Tokens.padding.medium
+-                disabled: !Config.background.wallpaperEnabled
+                 onClicked: root.nState.openSubPage(1) // Wallpaper page
+             }
+ 

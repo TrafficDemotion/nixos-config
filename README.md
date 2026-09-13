@@ -16,6 +16,7 @@
 | `librewolf/userChrome.css` | LibreWolf 界面定制（`programs.librewolf.userChrome`） |
 | `edid/aoc-q24g50f.bin` | 显示器的真实 EDID（软件假负载）→ 系统固件目录 |
 | `pkgs/sunshine.nix` | vendored 的 Sunshine 包定义（nixpkgs 自带的版本会泄漏 dma-buf） |
+| `patches/caelestia/*.patch` | 打在 caelestia-shell 上的本地补丁（见「给 Caelestia 打补丁」一节） |
 | `p10k.zsh` | powerlevel10k 配置 → `~/.p10k.zsh` |
 | `hardware-configuration.nix` | `nixos-generate-config` 生成，不要手改 |
 
@@ -69,7 +70,7 @@ sudo git -C /etc/nixos push
 恢复：`git clone https://github.com/TrafficDemotion/nixos-config` 到 `/etc/nixos`
 （先备份原文件），新机器重建时 `hardware-configuration.nix` 要按本机重生成。
 
-## 给 Caelestia 打补丁（计划中的做法，尚未实施）
+## 给 Caelestia 打补丁（已实施）
 
 外壳的 QML 在 `/nix/store/…-caelestia-shell-1.0.0/share/caelestia-shell/` 里只读，官方给的唯一
 覆盖点是 home-manager 的 `programs.caelestia.package`（`types.package`）。所以「打补丁」= 在
@@ -77,16 +78,42 @@ sudo git -C /etc/nixos push
 
 ```nix
 programs.caelestia.package =
-  inputs.caelestia-shell.packages.${pkgs.system}.with-cli   # HM 模块的默认就是它
+  inputs.caelestia-shell.packages.${pkgs.stdenv.hostPlatform.system}.with-cli  # HM 模块的默认就是它
   .overrideAttrs (old: {
-    postPatch = (old.postPatch or "") + ''
-      substituteInPlace modules/bar/components/Clock.qml \
-        --replace-fail '原文' '改后'
-    '';
+    patches =
+      (old.patches or [])
+      ++ [
+        ./patches/caelestia/0001-brightness-selfheal.patch
+        ./patches/caelestia/0002-wallpaper-page-usable.patch
+      ];
   });
 ```
 
-**补丁就放在这一个仓库里**（`patches/caelestia/0001-xxx.patch` + 上面那段 `postPatch`），不另开仓库：
+### 当前补丁清单（针对 caelestia-shell 1.0.0）
+
+| 补丁 | 改的文件 | 作用 |
+| --- | --- | --- |
+| `0001-brightness-selfheal.patch` | `services/Brightness.qml` | 一个 DDC 屏都探不到时每 10s 重扫 → 显示器后插/后通电**自愈**，不用再 `systemctl --user restart caelestia`；顺带给上游 #1809 的 `modelData` 判空（拔屏后 `TypeError: Cannot read property 'name' of null`） |
+| `0002-wallpaper-page-usable.patch` | `modules/nexus/pages/WallpaperAndStyle.qml` | 壁纸交给 aww 画（`background.wallpaperEnabled = false`）时，Nexus 里仍显示当前壁纸预览、Wallpapers 按钮不再变灰（否则这个页面只能看不能改） |
+
+**验收手法（都不依赖肉眼看屏幕）**：
+
+```bash
+# 1) 补丁是否真的落进构建产物：应只有那两个文件 differ
+OUT=$(nix-store -q --outputs /nix/store/*-caelestia-shell-1.0.0.drv | tail -1)
+diff -rq /nix/store/vjg2d2f55dds0cbysw6ppn542scd9wlk-caelestia-shell-1.0.0/share/caelestia-shell \
+         $OUT/share/caelestia-shell
+
+# 2) 亮度自愈（可离线复现「外壳启动时显示器断电」）
+sudo setfacl -m u:paan:--- /dev/i2c-4          # 让 ddcutil 探不到任何 DDC 屏
+systemctl --user restart caelestia             # 在故障态下启动
+caelestia-shell ipc call brightness get        # ≈0（走本机没装的 brightnessctl）
+journalctl --user -u caelestia -n 20 | grep ddcutil   # 每 10s 一条 EACCES = 重扫在跑
+sudo setfacl -m u:paan:rw- /dev/i2c-4          # 恢复访问，不发信号、不重启
+sleep 12; caelestia-shell ipc call brightness get     # 自己回到显示器真值（= ddcutil -b 4 getvcp 10）
+```
+
+**补丁就放在这一个仓库里**（`patches/caelestia/0001-xxx.patch` + `home.nix` 里那段 `overrideAttrs`），不另开仓库：
 
 - nix 只把 **git 已跟踪**的文件算进 flake 源码（见上一节），补丁必须与被求值的 flake 同树；
   分出去就得再加一个 flake input、多一份 lock 与版本漂移，维护量只增不减。
@@ -103,11 +130,15 @@ sudo nixos-rebuild build --flake /etc/nixos#nixos            # 只构建不切�
 sudo nixos-rebuild switch --flake /etc/nixos#nixos
 ```
 
-实测（临时副本里验过，没动运行中的系统）：只改 QML 时重建的是「拷文件」那一步 ——
-**8 秒**、不编 C++；锚点对不上时报
-`substituteStream() in derivation caelestia-shell-1.0.0: ERROR: pattern … doesn't match anything in file`。
+实测（2026-09-13 首次落地，两个补丁一起）：只改 QML 时重建的是「拷文件」那一步 ——
+`nixos-rebuild build` 全程 **21.8s**（含求值与 HM 生成），不编 C++。锚点对不上时失败在
+`patchPhase`，报 `patch: **** malformed patch` / `… does not apply`，构建直接中止、外壳不重启。
 注意 `caelestia-shell` 的 flake.lock 把 rev 钉死了，所以补丁不会因为「NixOS 更新」自己失效，
 只会在你主动 `nix flake update` 那一刻需要复核。
+
+**加新补丁的标准动作**：在 `patches/caelestia/` 放一张 `git diff` 风格的补丁（`-p1` 可应用，
+路径形如 `a/services/…`），追加到 `home.nix` 的 `patches` 列表里 → `sudo git -C /etc/nixos add -A`
+（**不做这步 nix 看不到文件**）→ `nixos-rebuild build` 验证 → `switch`。
 
 ## 已知坑
 
@@ -121,9 +152,13 @@ sudo nixos-rebuild switch --flake /etc/nixos#nixos
 3. **i915 固件**靠 `hardware.enableRedistributableFirmware`，否则 DMC/GuC 一直 `-ENOENT`。
 4. **不要开 `networking.wireless`**：与 NetworkManager 冲突。
 5. **从源码编译要加 `--max-jobs 1`**：这台 VM 内存小，编 quickshell 时被 OOM 杀过。
-6. **外接屏亮度**要 `hardware.i2c.enable` + `ddcutil`（本机没有 `/sys/class/backlight`）；
-   检测只在外壳启动那一刻跑一次，显示器断电时启动 → 亮度条静默失效，
-   把显示器接回并通电后 `systemctl --user restart caelestia`。
+6. **外接屏亮度**要 `hardware.i2c.enable` + `ddcutil`（本机没有 `/sys/class/backlight`）。
+   上游的 DDC 检测只在外壳启动那一刻与「屏幕列表变化」时跑一次；本机软件假负载让连接器恒
+   connected → 列表永不变，所以**显示器断电时启动会让亮度条静默失效**。已由补丁
+   `0001-brightness-selfheal.patch` 修掉：一个 DDC 屏都探不到时每 10s 重扫，插回并通电后
+   ≤10s 自己恢复（实测：故障态 IPC=0、journal 每 10s 一条 `ddcutil … EACCES`；恢复 i2c 访问后
+   12s 内 IPC 回到显示器真值，外壳 PID 不变）。补丁若被回退，兜底仍是
+   `systemctl --user restart caelestia`（或 `ddcutil -b 4 setvcp 10 <n>` 临时绕开外壳）。
 7. **改 Caelestia settings 会重启外壳**，连带把它 cgroup 里的 librewolf/kitty 一起杀掉；
    动手前 `hyprctl layers | grep session-lock` 确认没锁屏。
 

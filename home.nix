@@ -18,6 +18,28 @@
     enable = true;
     cli.enable = true;
 
+    # ── 打在 caelestia-shell 上的本地补丁 ──
+    # 外壳的 QML 在 /nix/store 里只读，官方给的唯一覆盖点就是这个 `package`
+    # 选项（HM 模块默认 = self.packages.<system>.with-cli）。补丁文件放在
+    # patches/caelestia/，和这段 overrideAttrs 必须同版本演进 —— 见 README
+    # 「给 Caelestia 打补丁」。改完只重跑「拷文件」那一步（约 8s，不编 C++）。
+    #   0001 亮度自愈：一个 DDC 屏都探不到时每 10s 重扫 → 显示器后插/后通电
+    #        也能自愈，不必再 `systemctl --user restart caelestia`；
+    #        顺带给上游 #1809 的 modelData 判空（拔屏后 TypeError）。
+    #   0002 Nexus 壁纸页：壁纸交给 aww 画（background.wallpaperEnabled = false）
+    #        时仍显示当前壁纸预览、Wallpapers 按钮不再变灰。
+    # 锚点对不上会**构建失败**（不会静默失效）：升级外壳前先 `nixos-rebuild build`。
+    package =
+      inputs.caelestia-shell.packages.${pkgs.stdenv.hostPlatform.system}.with-cli
+      .overrideAttrs (old: {
+        patches =
+          (old.patches or [])
+          ++ [
+            ./patches/caelestia/0001-brightness-selfheal.patch
+            ./patches/caelestia/0002-wallpaper-page-usable.patch
+          ];
+      });
+
     # ── 第三方壁纸守护进程：awww（就是 swww 改名后的版本）──
     # 水滴式过渡挂在 Caelestia CLI 官方的 wallpaper.postHook 上：每次切壁纸
     # （Nexus/启动器里点、`caelestia wallpaper -f/-r`）都会执行这条命令，并把

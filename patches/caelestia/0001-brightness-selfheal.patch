@@ -1,0 +1,57 @@
+Brightness: 无 DDC 屏时每 10s 重扫（显示器后插自愈）+ modelData 判空
+
+上游只在启动与「屏幕列表变化」时跑 ddcutil detect；本机软件假负载让 HDMI-A-1
+永远 connected，屏幕列表永不变，于是启动时显示器断电就会让亮度条永久失效。
+外加给上游 #1809 的 modelData 判空，避免拔屏后 TypeError。
+
+--- a/services/Brightness.qml
++++ b/services/Brightness.qml
+@@ -62,6 +62,24 @@
+     onMonitorsChanged: {
+         ddcMonitors = [];
+         ddcProc.running = true;
++    }
++
++    // ── 本地补丁（patches/caelestia/0001-brightness-selfheal.patch）────────────
++    // 上游只在两处重探 DDC：外壳启动那一刻，以及「屏幕列表变化」时（上面的
++    // onMonitorsChanged）。本机是核显直通 + 软件假负载（drm.edid_firmware +
++    // video=HDMI-A-1:2560x1440@60e），HDMI-A-1 永远 connected → 屏幕列表永不变化。
++    // 于是「外壳启动时显示器断电 / HDMI 线插在另一台虚拟机」会让 ddcutil 一个
++    // DDC 屏都探不到，isDdc 永远为 false，亮度命令静默走本机没装的 brightnessctl，
++    // 插回显示器也不自愈（只能 restart caelestia）。
++    // 这里在「一个 DDC 屏都没探到」时每 10s 重扫，探到后 running 自动变 false；
++    // 探到的瞬间 Monitor.onBusNumChanged → initBrightness() 把硬件真值读回来。
++    Timer {
++        id: ddcRescanTimer
++
++        interval: 10000
++        running: root.ddcMonitors.length === 0
++        repeat: true
++        onTriggered: ddcProc.running = true
+     }
+ 
+     Variants {
+@@ -155,7 +173,7 @@
+ 
+             monitor.setBrightness(targetBrightness);
+ 
+-            return `Set monitor ${monitor.modelData.name} brightness to ${+monitor.brightness.toFixed(2)}`;
++            return `Set monitor ${monitor.modelData ? monitor.modelData.name : "?"} brightness to ${+monitor.brightness.toFixed(2)}`;
+         }
+ 
+         target: "brightness"
+@@ -165,10 +183,12 @@
+         id: monitor
+ 
+         required property ShellScreen modelData
+-        readonly property var ddcInfo: root.ddcMonitorMap[modelData.name] ?? null
++        // 本地补丁：拔掉屏幕后 ShellScreen 可能失效（上游 #1809 的
++        // `TypeError: Cannot read property 'name' of null`），先判空。
++        readonly property var ddcInfo: modelData ? (root.ddcMonitorMap[modelData.name] ?? null) : null
+         readonly property bool isDdc: ddcInfo !== null
+         readonly property string busNum: ddcInfo?.busNum ?? ""
+-        readonly property bool isAppleDisplay: root.appleDisplayPresent && modelData.model.startsWith("StudioDisplay")
++        readonly property bool isAppleDisplay: root.appleDisplayPresent && !!modelData && modelData.model.startsWith("StudioDisplay")
+         property real brightness
+         property real queuedBrightness: NaN
+ 
