@@ -169,16 +169,16 @@ require("bufferline").setup({
     separator_style = "thin",
     always_show_bufferline = true,
     offsets = {
-      { filetype = "neo-tree", text = "文件", text_align = "left", highlight = "Directory" },
+      { filetype = "neo-tree", text = "Explorer", text_align = "left", highlight = "Directory" },
     },
   },
   highlights = require("catppuccin.special.bufferline").get_theme(),
 })
-map("n", "<S-l>", "<cmd>BufferLineCycleNext<cr>", { desc = "下一个 buffer" })
-map("n", "<S-h>", "<cmd>BufferLineCyclePrev<cr>", { desc = "上一个 buffer" })
-map("n", "<leader>bp", "<cmd>BufferLinePick<cr>", { desc = "跳转 buffer（按字母）" })
-map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "关闭 buffer" })
-map("n", "<leader>bo", "<cmd>BufferLineCloseOthers<cr>", { desc = "只留当前 buffer" })
+map("n", "<S-l>", "<cmd>BufferLineCycleNext<cr>", { desc = "Next buffer" })
+map("n", "<S-h>", "<cmd>BufferLineCyclePrev<cr>", { desc = "Previous buffer" })
+map("n", "<leader>bp", "<cmd>BufferLinePick<cr>", { desc = "Pick buffer" })
+map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "Close buffer" })
+map("n", "<leader>bo", "<cmd>BufferLineCloseOthers<cr>", { desc = "Close other buffers" })
 
 -- ── 文件浏览器：neo-tree（左侧树）─────────────────────────────────────────
 require("neo-tree").setup({
@@ -197,8 +197,8 @@ require("neo-tree").setup({
     indent = { with_expanders = true },
   },
 })
-map("n", "<leader>e", "<cmd>Neotree toggle<cr>", { desc = "文件浏览器" })
-map("n", "<leader>E", "<cmd>Neotree reveal<cr>", { desc = "在浏览器中定位当前文件" })
+map("n", "<leader>e", "<cmd>Neotree toggle<cr>", { desc = "File explorer" })
+map("n", "<leader>E", "<cmd>Neotree reveal<cr>", { desc = "Reveal current file in explorer" })
 
 -- 启动时自动展开左侧树（工作目录栏，像 VSCode 那样常驻，三种起法都开）：
 --   `nvim`                    → 根 = 当前目录
@@ -249,37 +249,37 @@ require("telescope").setup({
     find_files = { hidden = true },
   },
 })
-map("n", "<leader>ff", "<cmd>Telescope find_files<cr>", { desc = "查找文件" })
-map("n", "<leader>fg", "<cmd>Telescope live_grep<cr>", { desc = "全文搜索" })
-map("n", "<leader>fw", "<cmd>Telescope grep_string<cr>", { desc = "搜索光标下的单词" })
-map("n", "<leader>fb", "<cmd>Telescope buffers<cr>", { desc = "已打开的文件" })
-map("n", "<leader>fr", "<cmd>Telescope oldfiles<cr>", { desc = "最近打开过" })
-map("n", "<leader>fc", "<cmd>Telescope commands<cr>", { desc = "命令" })
-map("n", "<leader>fh", "<cmd>Telescope help_tags<cr>", { desc = "帮助文档" })
+map("n", "<leader>ff", "<cmd>Telescope find_files<cr>", { desc = "Find files" })
+map("n", "<leader>fg", "<cmd>Telescope live_grep<cr>", { desc = "Live grep" })
+map("n", "<leader>fw", "<cmd>Telescope grep_string<cr>", { desc = "Grep word under cursor" })
+map("n", "<leader>fb", "<cmd>Telescope buffers<cr>", { desc = "Open buffers" })
+map("n", "<leader>fr", "<cmd>Telescope oldfiles<cr>", { desc = "Recent files" })
+map("n", "<leader>fc", "<cmd>Telescope commands<cr>", { desc = "Commands" })
+map("n", "<leader>fh", "<cmd>Telescope help_tags<cr>", { desc = "Help tags" })
 
 -- ── 快捷键提示：which-key（按 <leader> 停一下会列出可用键）────────────────
 require("which-key").setup({ preset = "classic", delay = 300 })
 require("which-key").add({
-  { "<leader>b", group = "buffer" },
-  { "<leader>f", group = "查找" },
+  { "<leader>b", group = "Buffer" },
+  { "<leader>f", group = "Find" },
 })
 
 -- ── 常用快捷键 ────────────────────────────────────────────────────────────
-map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "清除搜索高亮" })
-map({ "n", "i", "v" }, "<C-s>", "<cmd>w<cr>", { desc = "保存" })
-map("n", "<leader>w", "<cmd>w<cr>", { desc = "保存" })
-map("n", "<leader>q", "<cmd>q<cr>", { desc = "退出" })
+map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "Clear search highlight" })
+map({ "n", "i", "v" }, "<C-s>", "<cmd>w<cr>", { desc = "Save" })
+map("n", "<leader>w", "<cmd>w<cr>", { desc = "Save" })
+map("n", "<leader>q", "<cmd>q<cr>", { desc = "Quit" })
 -- 窗口之间跳转 / 调大小（Ctrl 系；SUPER+hjkl 归 Hyprland 管）
-map("n", "<C-h>", "<C-w>h", { desc = "左窗口" })
-map("n", "<C-j>", "<C-w>j", { desc = "下窗口" })
-map("n", "<C-k>", "<C-w>k", { desc = "上窗口" })
-map("n", "<C-l>", "<C-w>l", { desc = "右窗口" })
-map("n", "<C-Up>", "<cmd>resize +2<cr>", { desc = "窗口变高" })
-map("n", "<C-Down>", "<cmd>resize -2<cr>", { desc = "窗口变矮" })
-map("n", "<C-Left>", "<cmd>vertical resize -2<cr>", { desc = "窗口变窄" })
-map("n", "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "窗口变宽" })
+map("n", "<C-h>", "<C-w>h", { desc = "Left window" })
+map("n", "<C-j>", "<C-w>j", { desc = "Down window" })
+map("n", "<C-k>", "<C-w>k", { desc = "Up window" })
+map("n", "<C-l>", "<C-w>l", { desc = "Right window" })
+map("n", "<C-Up>", "<cmd>resize +2<cr>", { desc = "Taller window" })
+map("n", "<C-Down>", "<cmd>resize -2<cr>", { desc = "Shorter window" })
+map("n", "<C-Left>", "<cmd>vertical resize -2<cr>", { desc = "Narrower window" })
+map("n", "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "Wider window" })
 -- 缩进后保持选中；可视模式上下移动选中行
-map("v", "<", "<gv", { desc = "左缩进" })
-map("v", ">", ">gv", { desc = "右缩进" })
-map("v", "J", ":m '>+1<cr>gv=gv", { desc = "下移选中行" })
-map("v", "K", ":m '<-2<cr>gv=gv", { desc = "上移选中行" })
+map("v", "<", "<gv", { desc = "Decrease indent" })
+map("v", ">", ">gv", { desc = "Increase indent" })
+map("v", "J", ":m '>+1<cr>gv=gv", { desc = "Move selection down" })
+map("v", "K", ":m '<-2<cr>gv=gv", { desc = "Move selection up" })

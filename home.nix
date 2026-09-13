@@ -532,6 +532,13 @@
     moonlight-qt # Moonlight 客户端：串流 Windows 主机上的 Sunshine
     ddcutil # 外接显示器亮度（DDC/CI）：Caelestia 亮度条/亮度键的后端；
             # 缺了它外壳会静默回退到 brightnessctl，而本机根本没有背光设备
+
+    # 视频 → 彩色 ASCII 动效（anifetch，包定义见 flake.nix 里的同名输入）。
+    # 它运行时靠 PATH 找 chafa 渲帧、ffmpeg/ffprobe 抽帧、ffplay 放音，fastfetch 本机已有；
+    # chafa 不在 Nix 的传递依赖里（只进了闭包、没进 PATH），必须显式装上，
+    # 否则启动就报 "chafa rendering failed"。
+    inputs.anifetch.packages.${pkgs.stdenv.hostPlatform.system}.default
+    chafa
   ];
 
   # ═══════════════════ 桌面配置（软链进 ~/.config）═══════════════════

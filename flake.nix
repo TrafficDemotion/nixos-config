@@ -24,6 +24,17 @@
       url = "github:caelestia-dots/shell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # anifetch —— 把视频渲染成彩色 ASCII 帧、与 fastfetch 并排播放的 fetch 工具
+    # （PewDiePie 那个动画 neofetch 效果；上游作者 Notenlish）。nixpkgs 里没有这个包，
+    # 所以按上游 README 的 NixOS 装法用 flake 引入。
+    # 注意：这里**故意不写** inputs.nixpkgs.follows = "nixpkgs"（README 示例是这么写的）——
+    # 本机 nixpkgs 钉在 26.05 的 a3116115，它的 python3Packages 里没有 chafa/ffmpeg
+    # 这两个属性（上游 package.nix 把二者当 python 依赖塞进运行时闭包），跟过去会在
+    # 求值期直接报错；用上游自己 lock 的 nixpkgs（2026-05-31）才能构建。
+    anifetch = {
+      url = "github:Notenlish/anifetch";
+    };
   };
 
   outputs =
