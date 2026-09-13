@@ -200,23 +200,23 @@ require("neo-tree").setup({
 map("n", "<leader>e", "<cmd>Neotree toggle<cr>", { desc = "文件浏览器" })
 map("n", "<leader>E", "<cmd>Neotree reveal<cr>", { desc = "在浏览器中定位当前文件" })
 
--- 启动时自动展开左侧树（像 VSCode 那样常驻）：
---   `nvim`（无参数 = 当前目录）或 `nvim <目录>` → 自动开
---   `nvim <文件>` → 不开（对应 VSCode 没打开文件夹时不显示目录树；
---                   也避免 git commit、其它程序调编辑器这类临时文件场景被塞一个侧栏）
+-- 启动时自动展开左侧树（工作目录栏，像 VSCode 那样常驻，三种起法都开）：
+--   `nvim`                    → 根 = 当前目录
+--   `nvim <目录>`             → 根 = 该目录（并把工作目录切过去）
+--   `nvim <文件>`             → 根 = 当前目录；文件不在当前目录底下时改用文件所在目录
+--                               （否则 follow_current_file 会一直弹“文件不在 cwd”的确认框）
 vim.api.nvim_create_autocmd("VimEnter", {
   callback = function()
     local arg = vim.fn.argv(0)
     local isdir = arg ~= "" and vim.fn.isdirectory(arg) == 1
-    if arg ~= "" and not isdir then
-      return
-    end
-    local dir = isdir and vim.fn.fnamemodify(arg, ":p") or vim.fn.getcwd()
+    local cwd = vim.fn.getcwd()
+    local dir
+
     if isdir then
+      dir = vim.fn.fnamemodify(arg, ":p")
       -- `nvim <目录>` 时第一个 buffer 就是那个目录（netrw 已关、neo-tree 的劫持也关了，没人接管它）：
       -- 换成空 buffer 并把目录 buffer 删掉，免得 bufferline 上多出一条。
-      -- 同时把工作目录切过去，这样树的根和 <leader>ff（telescope 按 cwd）是同一处。
-      vim.cmd.cd(vim.fn.fnameescape(dir))
+      -- （工作目录不用自己切：neo-tree 默认 bind_to_cwd = true，树根变化时它会自己 tcd 过去）
       vim.cmd("enew")
       for _, b in ipairs(vim.api.nvim_list_bufs()) do
         local name = vim.api.nvim_buf_get_name(b)
@@ -224,7 +224,16 @@ vim.api.nvim_create_autocmd("VimEnter", {
           vim.api.nvim_buf_delete(b, { force = true })
         end
       end
+    else
+      dir = cwd
+      if arg ~= "" then
+        local file = vim.fn.fnamemodify(arg, ":p")
+        if vim.fn.stridx(file, cwd .. "/") ~= 0 then
+          dir = vim.fn.fnamemodify(file, ":h")
+        end
+      end
     end
+
     vim.cmd("Neotree show dir=" .. vim.fn.fnameescape(dir))
   end,
 })
