@@ -96,6 +96,11 @@ programs.caelestia.package =
 | --- | --- | --- |
 | `0001-brightness-selfheal.patch` | `services/Brightness.qml` | 一个 DDC 屏都探不到时每 10s 重扫 → 显示器后插/后通电**自愈**，不用再 `systemctl --user restart caelestia`；顺带给上游 #1809 的 `modelData` 判空（拔屏后 `TypeError: Cannot read property 'name' of null`） |
 | `0002-wallpaper-page-usable.patch` | `modules/nexus/pages/WallpaperAndStyle.qml` | 壁纸交给 aww 画（`background.wallpaperEnabled = false`）时，Nexus 里仍显示当前壁纸预览、Wallpapers 按钮不再变灰（否则这个页面只能看不能改） |
+| `0003-ui-sounds.patch` | `components/StateLayer.qml`、`controls/StyledSwitch.qml`、`FilledSlider.qml`、`StyledSlider.qml`、`CustomMouseArea.qml`、`services/UiSounds.qml`（新增） | 外壳内部交互音（C1）：挂在共享组件上，一次覆盖所有点击/开关/滑条/滚轮 |
+| `0004-ui-sounds-events.patch` | `services/{UiSounds,Hypr,Recorder}.qml`、`components/ScreenState.qml`、`modules/areapicker/AreaPicker.qml`、`modules/lock/Lock.qml` | 事件级音效：开/关窗、切工作区、抽屉/面板开合、截图快门、锁/解锁、录屏起停 |
+| `0005-ui-sounds-tab-popout.patch` | `services/UiSounds.qml`、`components/{ScreenState.qml,controls/CustomMouseArea.qml}`、`modules/dashboard/Tabs.qml`、`modules/bar/popouts/PopoutState.qml` | dashboard 切页只在真的换页时响一声；竖栏 popout 打开出声 |
+| `0006-ui-sounds-drawers-wheel.patch` | `modules/drawers/Interactions.qml`、`modules/bar/popouts/PopoutState.qml`、`services/UiSounds.qml` | 抽屉整层滚轮不再空响（只在鼠标确实在竖栏上滚时出声）；popout 收起补一声 |
+| `0007-lock-minimal-fade.patch` | `modules/lock/{Content,Center,LockSurface}.qml` | 锁屏只留密码框（删掉三栏内容与那个大面板、贴屏幕底部）+ 上锁/解锁只做淡入淡出（见下面「锁屏精简」一节） |
 
 **验收手法（都不依赖肉眼看屏幕）**：
 
@@ -353,6 +358,40 @@ dashboard 切页那半只能真滚轮验证（Hyprland 不能注入滚轮事件�
   我的 `hl.dsp.cursor.move` 和他的真实鼠标操作互相打架，捕获里混进他的点击音（-3 dB 与 popout
   打开音同档，无法区分）。**用光标注入做验收时，先确认用户没在动鼠标**（或改用键盘）
   —— 否则数据不可信。
+
+### 锁屏精简：只留密码框（无面板、贴屏幕底部）+ 只做淡入淡出（`patches/caelestia/0007-lock-minimal-fade.patch`）
+
+诉求：「锁屏能换成第三方吗」「想精简到只有密码框」「上锁/解锁那个锁动画去掉，只留 fade in/out」。
+
+**为什么只能打补丁**：`lock` 的全部配置项只有 `enabled / useWallpaper / recolourLogo / enableFprint /
+maxFprintTries / enableHowdy / maxHowdyTries / triggerHowdyOnWake / hideNotifs`
+（`plugin/src/Caelestia/Config/lockconfig.hpp`）—— **锁屏界面内容和动画都没有开关**。
+也**不要**用 `lock.enabled = false` 当「关掉外壳锁屏」：它只把内容（含密码框）藏起来，背景照旧铺满，
+等于把自己锁在门外。
+
+**改了三处**：
+
+| 文件 | 改动 |
+| --- | --- |
+| `modules/lock/Content.qml` | 上游三栏（左＝天气/系统信息/媒体，右＝资源/通知抽屉）只留 Center 一栏，并给它 `Layout.fillWidth`（`Layout.preferredWidth` 是 `centerWidth`，单留一栏会被摆在左边） |
+| `modules/lock/Center.qml` | 删掉 Clock（大字时钟）、日期文本、ProfilePic（头像），只留 PasswordInput + StateMessage（指纹提示/认证失败原因） |
+| `modules/lock/LockSurface.qml` | ① 删掉「大面板」`lockContent` + `lockBg`（m3surface 圆角矩形+阴影）+ 中心锁图标 `lockIcon`；剩下的 `Content` 一组宽度取 `centerWidth`、高度由内容撑开，水平居中、`anchors.bottom` 贴屏幕底部、下边距 `Tokens.padding.extraExtraLarge`(48)。② 上锁：上游 `scale 0→1` + `rotation→360` + 锁图标反着转一圈 → 只留 `background`/`content` 的 opacity 淡入（`Anim.StandardLarge` = 600ms）。③ 解锁：上游内容缩到 0、圆角回缩、锁图标淡入、背景淡出 → 只留 `content` 淡出（`Anim.StandardSmall` = 200ms）；末尾 `PropertyAction locked=false` 不变（**先放完动画再解锁**，`ipc call lock unlock` 与 PAM 成功走同一条信号） |
+
+时长 token 取自 `plugin/src/Caelestia/Config/tokens.hpp`：`small 200 / normal 400 / large 600 / extraLarge 1000`。
+
+**实测验收（`hyprctl dispatch 'hl.dsp.global("caelestia:lock")'`，后台连续 `grim` 抓帧）**：
+
+- 上锁：第 2 帧近全黑（15 KB）→ 第 3 帧半透明浮现（686 KB）→ 第 4 帧 840 KB → 稳定帧 845 KB，
+  即「整屏 + 密码框一起淡入」；任何一帧都没有倾斜/缩小/旋转的方块（旧实现会看到一个转着放大的锁块）。
+- 稳定帧：只有底部居中的密码框，距底边约 100 px（48 是写死的下边距，其余是**空状态行的占位高度**）；
+  没有面板/时钟/头像/通知。想更贴底 → 把那个 `Tokens.padding.extraExtraLarge`(48) 改成 `medium`(12) 等。
+- 解锁：`ipc call lock unlock` 后连查 `isLocked`，先 `true` 约 1 s 再 `false`（= 解锁被动画挡住），
+  外壳 `NRestarts` 仍 0、日志无 `invalid object`。
+- **没验到的**：真·PAM 解锁（敲密码）那条路的文案与手感 —— 要自己按一次 SUPER+L 输密码才算。
+- 注意：这台机器的图形会话仍是旧的 `QT_IM_MODULE=fcitx`（登录后没重登过），锁屏上可能又出现
+  「只能输数字」；**应急 = 在锁屏上按一次 Ctrl+Space**，根治 = 重新登录一次。
+
+**回滚**：`home.nix` 的 patches 列表删掉 0007 那行 → `nixos-rebuild switch`（QML-only，不编 C++）。
 
 ## 已知坑
 

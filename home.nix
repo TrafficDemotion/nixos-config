@@ -31,6 +31,9 @@
     #   0003 外壳内部 UI 交互音效（C1）：新增单例 services/UiSounds.qml，挂在共享组件上——
     #        StateLayer（所有按钮/条目/图标/tile 的点击）、StyledSwitch（开关）、
     #        FilledSlider + StyledSlider（音量/亮度/媒体滑条）、CustomMouseArea（滚轮）。
+    #   0007 锁屏精简：锁屏只留密码框（Content 只留 Center 一栏、Center 删掉时钟/日期/头像，
+    #        只留密码框+状态行），上锁/解锁只做 opacity 淡入淡出（LockSurface 的 initAnim/unlockAnim
+    #        去掉旋转/缩放/圆角回缩与中心锁图标）。
     # 锚点对不上会**构建失败**（不会静默失效）：升级外壳前先 `nixos-rebuild build`。
     package =
       inputs.caelestia-shell.packages.${pkgs.stdenv.hostPlatform.system}.with-cli
@@ -44,6 +47,7 @@
             ./patches/caelestia/0004-ui-sounds-events.patch
             ./patches/caelestia/0005-ui-sounds-tab-popout.patch
             ./patches/caelestia/0006-ui-sounds-drawers-wheel.patch
+            ./patches/caelestia/0007-lock-minimal-fade.patch
           ];
       });
 

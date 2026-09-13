@@ -1,0 +1,344 @@
+锁屏精简：只留密码框（没有面板、贴屏幕底部）+ 上锁/解锁只做淡入淡出
+
+① modules/lock/Content.qml：上游是三栏 RowLayout（左＝天气/系统信息/媒体，中＝Center(时钟+头像+
+   密码框)，右＝资源/通知抽屉），现在只留 Center 一栏，并给它 Layout.fillWidth（Center 的
+   preferredWidth 是 centerWidth，只留一栏会被摆在左边）。
+② modules/lock/Center.qml：删掉 Clock（大字时钟）、日期文本、ProfilePic（头像），只留
+   PasswordInput（密码框）+ StateMessage（指纹提示 / 认证失败原因）。
+③ modules/lock/LockSurface.qml：
+   - 删掉上游那个「大面板」：lockContent(Item) + lockBg(m3surface 圆角矩形+阴影) + 中心锁图标
+     lockIcon 全部移除。屏幕上只剩 Content 这一组：宽度取 Center 的 preferredWidth、高度由内容
+     撑开，水平居中、锚在屏幕底部，下边距 Tokens.padding.extraExtraLarge(48)。
+   - 上锁（initAnim）：上游是 lockContent scale 0→1 + rotation→360（锁块转一圈放大）、锁图标同转
+     一圈再淡出、面板从图标大小长出来；现在只淡入 background + content（opacity 0→1），无旋转/缩放。
+   - 解锁（unlockAnim）：上游是内容缩到 0、圆角回缩、中心锁图标淡入、背景淡出，最后才 locked=false；
+     现在只把 content 淡出（opacity→0），PropertyAction（先放完动画再解锁）保持不变。
+   - 密码框自身的显隐仍由 Config.lock.enabled 控制（visible），PAM 流程与 unlocking 别名都不变。
+   没有对应设置项可做这件事：lock 的全部配置只有 enabled / useWallpaper / recolourLogo /
+   enableFprint / maxFprintTries / enableHowdy / maxHowdyTries / triggerHowdyOnWake / hideNotifs
+   （plugin/src/Caelestia/Config/lockconfig.hpp），动画和锁屏内容都不在其中。
+--- a/modules/lock/LockSurface.qml
++++ b/modules/lock/LockSurface.qml
+@@ -29,55 +29,19 @@
+         target: root.lock
+     }
+ 
++    // 本地补丁 0007：解锁只做淡出。
++    // 上游这里是一整套：内容缩到 0、圆角回缩、中心锁图标淡入、背景淡出，然后才置 locked=false。
++    // 现在只剩密码框这一组整体淡出。没变的是「先放完动画再解锁」（locked=false 仍在最后）。
+     SequentialAnimation {
+         id: unlockAnim
+ 
+-        ParallelAnimation {
+-            Anim {
+-                target: lockContent
+-                properties: "implicitWidth,implicitHeight"
+-                to: lockContent.size
+-            }
+-            Anim {
+-                target: lockBg
+-                property: "radius"
+-                to: lockContent.radius
+-            }
+-            Anim {
+-                target: content
+-                property: "scale"
+-                to: 0
+-            }
+-            Anim {
+-                target: content
+-                property: "opacity"
+-                to: 0
+-                type: Anim.StandardSmall
+-            }
+-            Anim {
+-                target: lockIcon
+-                property: "opacity"
+-                to: 1
+-                type: Anim.StandardLarge
+-            }
+-            Anim {
+-                target: background
+-                property: "opacity"
+-                to: 0
+-                type: Anim.StandardLarge
+-            }
+-            SequentialAnimation {
+-                PauseAnimation {
+-                    duration: Tokens.anim.durations.small
+-                }
+-                Anim {
+-                    type: Anim.Standard
+-                    target: lockContent
+-                    property: "opacity"
+-                    to: 0
+-                }
+-            }
++        Anim {
++            target: content
++            property: "opacity"
++            to: 0
++            type: Anim.StandardSmall
+         }
++
+         PropertyAction {
+             target: root.lock
+             property: "locked"
+@@ -85,6 +49,9 @@
+         }
+     }
+ 
++    // 本地补丁 0007：上锁只做淡入。
++    // 上游这里是 lockContent 的 scale 0→1 + rotation→360（锁块转一圈放大），锁图标同时转一圈再淡出。
++    // 现在只淡入背景和密码框，没有任何旋转/缩放。
+     ParallelAnimation {
+         id: initAnim
+ 
+@@ -96,62 +63,11 @@
+             to: 1
+             type: Anim.StandardLarge
+         }
+-        SequentialAnimation {
+-            ParallelAnimation {
+-                Anim {
+-                    target: lockContent
+-                    property: "scale"
+-                    to: 1
+-                    type: Anim.FastSpatial
+-                }
+-                Anim {
+-                    target: lockContent
+-                    property: "rotation"
+-                    to: 360
+-                    duration: Tokens.anim.durations.expressiveFastSpatial
+-                    easing: Tokens.anim.standardAccel
+-                }
+-            }
+-            ParallelAnimation {
+-                Anim {
+-                    target: lockIcon
+-                    property: "rotation"
+-                    to: 360
+-                    easing: Tokens.anim.standardDecel
+-                }
+-                Anim {
+-                    type: Anim.DefaultEffects
+-                    target: lockIcon
+-                    property: "opacity"
+-                    to: 0
+-                }
+-                Anim {
+-                    type: Anim.DefaultEffects
+-                    target: content
+-                    property: "opacity"
+-                    to: 1
+-                }
+-                Anim {
+-                    target: content
+-                    property: "scale"
+-                    to: 1
+-                }
+-                Anim {
+-                    target: lockBg
+-                    property: "radius"
+-                    to: lockContent.Tokens.rounding.extraLarge * 1.5
+-                }
+-                Anim {
+-                    target: lockContent
+-                    property: "implicitWidth"
+-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult * lockContent.Tokens.sizes.lock.ratio
+-                }
+-                Anim {
+-                    target: lockContent
+-                    property: "implicitHeight"
+-                    to: (root.screen?.height ?? 0) * lockContent.Tokens.sizes.lock.heightMult
+-                }
+-            }
++        Anim {
++            target: content
++            property: "opacity"
++            to: 1
++            type: Anim.StandardLarge
+         }
+     }
+ 
+@@ -192,55 +108,22 @@
+         }
+     }
+ 
+-    Item {
+-        id: lockContent
+-
+-        readonly property int size: lockIcon.implicitHeight + Tokens.padding.large * 4
+-        readonly property int radius: size / 4 * Tokens.rounding.scale
++    Content {
++        id: content
+ 
+-        anchors.centerIn: parent
+-        implicitWidth: size
+-        implicitHeight: size
++        // 本地补丁 0007：上游那个「大面板」（lockContent + lockBg + 中心锁图标）整个删掉了，
++        // 现在屏幕上只有密码框 + 状态行这一组：宽度取 Center 的 preferredWidth，高度由内容撑开，
++        // 水平居中、贴屏幕底部，只留 extraExtraLarge(48) 的下边距。
++        width: implicitWidth
++        height: implicitHeight
++
++        anchors.horizontalCenter: parent.horizontalCenter
++        anchors.bottom: parent.bottom
++        anchors.bottomMargin: Tokens.padding.extraExtraLarge
+ 
+         visible: Config.lock.enabled
+-        rotation: 180
+-        scale: 0
+-
+-        StyledRect {
+-            id: lockBg
+-
+-            anchors.fill: parent
+-            color: Colours.palette.m3surface
+-            radius: parent.radius
+-            opacity: Colours.transparency.enabled ? Colours.transparency.base : 1
+-
+-            layer.enabled: true
+-            layer.effect: MultiEffect {
+-                shadowEnabled: true
+-                blurMax: 15
+-                shadowColor: Qt.alpha(Colours.palette.m3shadow, 0.7)
+-            }
+-        }
+-
+-        MaterialIcon {
+-            id: lockIcon
+-
+-            anchors.centerIn: parent
+-            text: "lock"
+-            fontStyle: Tokens.font.icon.builders.extraLarge.scale(4).weight(Font.Bold).build()
+-            rotation: 180
+-        }
+-
+-        Content {
+-            id: content
+-
+-            anchors.centerIn: parent
+-            width: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult * Tokens.sizes.lock.ratio - Tokens.padding.extraLargeIncreased
+-            height: (root.screen?.height ?? 0) * Tokens.sizes.lock.heightMult - Tokens.padding.extraLargeIncreased
++        opacity: 0
+ 
+-            lock: root
+-            opacity: 0
+-            scale: 0
+-        }
++        lock: root
+     }
+ }
+--- a/modules/lock/Content.qml
++++ b/modules/lock/Content.qml
+@@ -4,6 +4,11 @@
+ import qs.components
+ import qs.services
+ 
++// 本地补丁 0007：锁屏只留密码框。
++// 上游这里是三栏 RowLayout：左＝WeatherInfo/Fetch(系统信息)/Media，中＝Center(时钟+头像+密码框)，
++// 右＝Resources/NotifDock。现在只保留 Center 一栏（Center.qml 里也只留密码框）。
++// Center 的 Layout.preferredWidth 是 centerWidth，光留一栏会被摆在左边，所以这里给 fillWidth
++// 让它占满整行，再由 Center 内部的 ColumnLayout 把密码框水平居中。
+ RowLayout {
+     id: root
+ 
+@@ -11,50 +16,9 @@
+ 
+     spacing: Tokens.spacing.largeIncreased * 2
+ 
+-    ColumnLayout {
+-        Layout.fillWidth: true
+-        spacing: Tokens.spacing.medium
+-
+-        WeatherInfo {
+-            Layout.fillWidth: true
+-            rootHeight: root.height
+-        }
+-
+-        Fetch {
+-            Layout.fillWidth: true
+-            rootHeight: root.height
+-        }
+-
+-        Media {
+-            Layout.fillWidth: true
+-            Layout.fillHeight: true
+-            lock: root.lock
+-        }
+-    }
+-
+     Center {
+-        lock: root.lock
+-    }
+-
+-    ColumnLayout {
+         Layout.fillWidth: true
+-        spacing: Tokens.spacing.medium
+-
+-        Resources {
+-            Layout.fillWidth: true
+-        }
+ 
+-        StyledRect {
+-            Layout.fillWidth: true
+-            Layout.fillHeight: true
+-
+-            bottomRightRadius: Tokens.rounding.extraLarge
+-            radius: Tokens.rounding.medium
+-            color: Colours.tPalette.m3surfaceContainer
+-
+-            NotifDock {
+-                lock: root.lock
+-            }
+-        }
++        lock: root.lock
+     }
+ }
+--- a/modules/lock/Center.qml
++++ b/modules/lock/Center.qml
+@@ -5,6 +5,10 @@
+ import qs.components
+ import qs.services
+ 
++// 本地补丁 0007：锁屏只留密码框。
++// 上游这一列是：Clock（大字时钟）→ 日期文本 → ProfilePic（头像）→ PasswordInput → StateMessage。
++// 现在删掉时钟/日期/头像，只留「密码框 + 状态行（指纹提示、认证失败原因）」，整组由内容自己撑开
++// （LockSurface 里再把它贴到屏幕底部），所以这里不再需要撑高的弹簧。
+ ColumnLayout {
+     id: root
+ 
+@@ -14,31 +18,9 @@
+ 
+     Layout.preferredWidth: centerWidth
+     Layout.fillWidth: false
+-    Layout.fillHeight: true
+ 
+     spacing: Tokens.spacing.largeIncreased
+ 
+-    Clock {
+-        Layout.alignment: Qt.AlignHCenter
+-        Layout.topMargin: Tokens.padding.large
+-        centerScale: root.centerScale
+-    }
+-
+-    StyledText {
+-        Layout.alignment: Qt.AlignHCenter
+-
+-        text: Time.format("dddd • d MMM").toUpperCase()
+-        color: Colours.palette.m3onSurface
+-        font: Tokens.font.title.builders.medium.weight(Font.DemiBold).build()
+-    }
+-
+-    ProfilePic {
+-        Layout.alignment: Qt.AlignHCenter
+-        Layout.topMargin: Tokens.spacing.extraExtraLarge * root.centerScale
+-        Layout.bottomMargin: Tokens.spacing.extraLarge * root.centerScale
+-        centerWidth: root.centerWidth
+-    }
+-
+     PasswordInput {
+         Layout.alignment: Qt.AlignHCenter
+         centerScale: Math.max(0.8, root.centerScale)
