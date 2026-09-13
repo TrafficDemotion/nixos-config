@@ -171,6 +171,11 @@ hl.config({
   misc = {
     force_default_wallpaper = 0,
     disable_hyprland_logo = true,
+    -- 锁屏期间继续渲染下面的工作区（Hyprland 官方选项）。两个作用：
+    -- ① 解锁时桌面已是渲染好的，不再「卡一下 → 窗口/bar 整帧弹出来」；
+    -- ② 配合 0007 补丁把锁屏整层淡成透明，解锁就是真正的交叉淡化（桌面在下层淡入）。
+    -- 锁屏本身仍是完全不透明的（壁纸 + 密码框），外面看不到桌面内容。
+    session_lock_xray = true,
   },
 })
 

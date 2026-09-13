@@ -375,23 +375,51 @@ maxFprintTries / enableHowdy / maxHowdyTries / triggerHowdyOnWake / hideNotifs`
 | --- | --- |
 | `modules/lock/Content.qml` | 上游三栏（左＝天气/系统信息/媒体，右＝资源/通知抽屉）只留 Center 一栏，并给它 `Layout.fillWidth`（`Layout.preferredWidth` 是 `centerWidth`，单留一栏会被摆在左边） |
 | `modules/lock/Center.qml` | 删掉 Clock（大字时钟）、日期文本、ProfilePic（头像），只留 PasswordInput + StateMessage（指纹提示/认证失败原因） |
-| `modules/lock/LockSurface.qml` | ① 删掉「大面板」`lockContent` + `lockBg`（m3surface 圆角矩形+阴影）+ 中心锁图标 `lockIcon`；剩下的 `Content` 一组宽度取 `centerWidth`、高度由内容撑开，水平居中、`anchors.bottom` 贴屏幕底部、下边距 `Tokens.padding.extraExtraLarge`(48)。② 上锁：上游 `scale 0→1` + `rotation→360` + 锁图标反着转一圈 → 只留 `background`/`content` 的 opacity 淡入（`Anim.StandardLarge` = 600ms）。③ 解锁：上游内容缩到 0、圆角回缩、锁图标淡入、背景淡出 → 只留 `content` 淡出（`Anim.StandardSmall` = 200ms）；末尾 `PropertyAction locked=false` 不变（**先放完动画再解锁**，`ipc call lock unlock` 与 PAM 成功走同一条信号） |
+| `modules/lock/LockSurface.qml` | ① 删掉「大面板」`lockContent` + `lockBg`（m3surface 圆角矩形+阴影）+ 中心锁图标 `lockIcon`；剩下的 `Content` 一组宽度取 `centerWidth`、高度由内容撑开，水平居中、`anchors.bottom` 贴屏幕底部、下边距 `Tokens.padding.extraExtraLarge`(48)。② 背景做成两层同一条壁纸（下面清晰、上面盖一层模糊），上锁时 `background`+`content` 一起 opacity 0→1（1000 ms）。③ 解锁时 `background`+`content` 一起 opacity→0 —— 锁屏**淡成透明**，露出下层真实运行的桌面（600 ms），然后 `PropertyAction locked=false`（**先放完动画再解锁**，`ipc call lock unlock` 与 PAM 成功走同一条信号） |
+| `hypr/hyprland.lua` | `misc.session_lock_xray = true` —— Hyprland 官方选项「锁屏期间继续渲染下面的工作区」，是上面 ③「淡成透明露桌面」的前提；锁屏本身仍完全不透明，外面看不到桌面内容 |
+
+**两个踩坑才定下来的机制**（改这块前务必读）：
+
+1. **`layer.effect` 里拿不到效果对象**。`layer.effect: MultiEffect { id: bgBlur … }` 里声明的 id 在父作用域
+   **不可见**（`WARN scene: ReferenceError: bgBlur is not defined`），而 `background.layer.effect` 返回的是
+   **QQmlComponent** 而不是 MultiEffect（`Object.keys` 只有 `objectName/status/url/createObject…`），
+   所以也没法动画它的属性（`Cannot animate non-existent property "blur"`）。
+   → 要能动模糊只能「两层同一条壁纸：下层清晰、上层盖一层模糊，动画上层的 `opacity`」。
+   ⚠️ 这还有一个更坏的后果：那条 `Anim` 直接不干活 → `SequentialAnimation` 里的 `PropertyAction` 不执行
+   → **锁解不开**（`ipc call lock unlock` 之后 `isLocked` 仍是 true）。凡是在解锁动画里引用外部对象，
+   改完必须实测「解锁后 `isLocked` 变 false」。
+2. **解锁要"淡成透明露桌面"，前提是 `misc:session_lock_xray = true`**。ext-session-lock 下桌面本来不渲染，
+   所以锁屏最后一帧永远不像桌面、只能硬切 —— 这就是「密码框淡出后停顿半秒 → 窗口与 bar 整帧弹出来」。
+   打开 xray 后 Hyprland 会把工作区继续合成在锁屏层**下面**，于是把锁屏整层 opacity 淡到 0，
+   露出来的就是**真实运行的桌面**：窗口与 bar 是**淡进来的**。
+   证据：上锁 +0.43 s 的中间帧里，同一帧能同时看到 LibreWolf 窗口/左侧栏与锁屏的模糊壁纸＋
+   `Enter your password`（= 桌面确实被合成在锁屏层下面）。
+   代价：锁屏期间会话继续渲染（略多 GPU/功耗）；锁屏本身仍完全不透明，外面看不到桌面内容。
+
+**最终动画参数**（都在 `LockSurface.qml`，一行可调）：
+
+| 动作 | 时长 | 内容 |
+| --- | --- | --- |
+| 上锁 | `Tokens.anim.durations.extraLarge` = **1000 ms**（`Anim.StandardLarge` 的缓动 + 显式 duration） | `background`（壁纸+模糊层）与 `content`（密码框）一起 opacity 0→1 |
+| 解锁 | `Anim.StandardLarge` = **600 ms** | `background` 与 `content` 一起 opacity→0（淡成透明 → 桌面在下层淡入），然后 `PropertyAction locked=false` |
 
 时长 token 取自 `plugin/src/Caelestia/Config/tokens.hpp`：`small 200 / normal 400 / large 600 / extraLarge 1000`。
 
-**实测验收（`hyprctl dispatch 'hl.dsp.global("caelestia:lock")'`，后台连续 `grim` 抓帧）**：
+**验收（可复用）**：
 
-- 上锁：第 2 帧近全黑（15 KB）→ 第 3 帧半透明浮现（686 KB）→ 第 4 帧 840 KB → 稳定帧 845 KB，
-  即「整屏 + 密码框一起淡入」；任何一帧都没有倾斜/缩小/旋转的方块（旧实现会看到一个转着放大的锁块）。
-- 稳定帧：只有底部居中的密码框，距底边约 100 px（48 是写死的下边距，其余是**空状态行的占位高度**）；
-  没有面板/时钟/头像/通知。想更贴底 → 把那个 `Tokens.padding.extraExtraLarge`(48) 改成 `medium`(12) 等。
-- 解锁：`ipc call lock unlock` 后连查 `isLocked`，先 `true` 约 1 s 再 `false`（= 解锁被动画挡住），
-  外壳 `NRestarts` 仍 0、日志无 `invalid object`。
-- **没验到的**：真·PAM 解锁（敲密码）那条路的文案与手感 —— 要自己按一次 SUPER+L 输密码才算。
-- 注意：这台机器的图形会话仍是旧的 `QT_IM_MODULE=fcitx`（登录后没重登过），锁屏上可能又出现
-  「只能输数字」；**应急 = 在锁屏上按一次 Ctrl+Space**，根治 = 重新登录一次。
+- 触发：`hyprctl dispatch 'hl.dsp.global("caelestia:lock")'`；解锁用 `caelestia-shell ipc call lock unlock`
+  —— 它与 PAM 成功发的是同一条 `unlock` 信号，所以不用密码就能验完整动画；**验完必须确认
+  `isLocked` = false**（动画坏了会卡在锁屏）。
+- 抓帧：后台连续 `grim`（锁屏期间从 ssh 照样成功，需 `XDG_RUNTIME_DIR`+`WAYLAND_DISPLAY=wayland-1`
+  +`HYPRLAND_INSTANCE_SIGNATURE`）。淡入中间帧 ≈2.7 MB（桌面+锁屏混合）、稳定帧 845 KB（模糊壁纸+密码框）。
+- 稳定帧内容：只有底部居中的密码框，距底边约 100 px（48 是下边距，其余是**空状态行的占位高度**）；
+  没有面板/时钟/头像/通知。想更贴底 → 把 `Tokens.padding.extraExtraLarge`(48) 改成 `medium`(12) 等。
+- 外壳 `NRestarts` 保持 0、日志无 `invalid object`（未触发孤儿锁）。
+- **已由用户实测**：SUPER+L 输密码解锁整条路的手感（其中「窗口/bar 弹出」一条促成上面的 xray 改动）；
+  以及锁屏上若只能输数字 = 图形会话仍是旧的 `QT_IM_MODULE=fcitx`，应急按一次 `Ctrl+Space`，
+  根治是重新登录一次。
 
-**回滚**：`home.nix` 的 patches 列表删掉 0007 那行 → `nixos-rebuild switch`（QML-only，不编 C++）。
+**回滚**：`home.nix` 的 patches 列表删掉 0007 那行 + 把 `hypr/hyprland.lua` 里的 `session_lock_xray` 改回 `false`（备份在 `hypr/hyprland.lua.bak-20260913-xray`）→ `nixos-rebuild switch`（QML-only，不编 C++）。
 
 ## 已知坑
 

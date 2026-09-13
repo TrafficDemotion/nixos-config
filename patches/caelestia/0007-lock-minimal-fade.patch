@@ -9,28 +9,44 @@
    - 删掉上游那个「大面板」：lockContent(Item) + lockBg(m3surface 圆角矩形+阴影) + 中心锁图标
      lockIcon 全部移除。屏幕上只剩 Content 这一组：宽度取 Center 的 preferredWidth、高度由内容
      撑开，水平居中、锚在屏幕底部，下边距 Tokens.padding.extraExtraLarge(48)。
+   - 背景改成两层同一条壁纸：下面清晰（＝桌面看到的样子），上面一层 layer.effect 盖着模糊。
    - 上锁（initAnim）：上游是 lockContent scale 0→1 + rotation→360（锁块转一圈放大）、锁图标同转
-     一圈再淡出、面板从图标大小长出来；现在只淡入 background + content（opacity 0→1），无旋转/缩放。
+     一圈再淡出、面板从图标大小长出来；现在只淡入 background + content（opacity 0→1），无旋转/缩放，
+     时长 Tokens.anim.durations.extraLarge = 1000ms（用户要求「再明显一些、长一些」）。
    - 解锁（unlockAnim）：上游是内容缩到 0、圆角回缩、中心锁图标淡入、背景淡出，最后才 locked=false；
-     现在只把 content 淡出（opacity→0），PropertyAction（先放完动画再解锁）保持不变。
+     现在是 600ms（Anim.StandardLarge）并行两条 —— content 淡出 + **模糊层 blurLayer.opacity 1→0**，
+     然后 PropertyAction locked=false。化开模糊是为了消除「割裂」：ext-session-lock 下桌面在解锁
+     完成前不渲染，最后一帧必须长得像桌面；锁屏背景是「壁纸+模糊」，桌面壁纸是同一条、清晰的，
+     把模糊层淡掉后解锁那一帧就与桌面同图同清晰度，桌面接上时背景连续。
+   - ⚠️ 模糊不能在背景自己的 layer.effect 里做动画：`layer.effect` 返回的是 **QQmlComponent**
+     （`bg.layer.effect` 的 keys 只有 objectName/status/url/createObject…），既拿不到里面声明的 id
+     （`ReferenceError: bgBlur is not defined`），也无法动画其属性
+     （`Cannot animate non-existent property "blur"`）。所以用「两层 + 动画上层 opacity」。
    - 密码框自身的显隐仍由 Config.lock.enabled 控制（visible），PAM 流程与 unlocking 别名都不变。
    没有对应设置项可做这件事：lock 的全部配置只有 enabled / useWallpaper / recolourLogo /
    enableFprint / maxFprintTries / enableHowdy / maxHowdyTries / triggerHowdyOnWake / hideNotifs
    （plugin/src/Caelestia/Config/lockconfig.hpp），动画和锁屏内容都不在其中。
 --- a/modules/lock/LockSurface.qml
 +++ b/modules/lock/LockSurface.qml
-@@ -29,55 +29,19 @@
+@@ -29,55 +29,34 @@
          target: root.lock
      }
  
-+    // 本地补丁 0007：解锁只做淡出。
++    // 本地补丁 0007：解锁 = 锁屏整层淡成透明（背景壁纸+模糊层 + 密码框一起），600ms，然后才置 locked=false。
++    // 前提是 Hyprland 开了 `misc:session_lock_xray = true`（锁屏期间继续渲染下面的工作区），
++    // 这样「淡成透明」露出来的是**真实运行的桌面**（含窗口与 bar）—— 于是窗口/bar 是淡进来的，不是整帧弹出来。
++    //
 +    // 上游这里是一整套：内容缩到 0、圆角回缩、中心锁图标淡入、背景淡出，然后才置 locked=false。
-+    // 现在只剩密码框这一组整体淡出。没变的是「先放完动画再解锁」（locked=false 仍在最后）。
++    //
++    // 为什么这么做（用户反馈「密码框淡出后停顿半秒、切入桌面几乎没过渡」）：ext-session-lock 下桌面
++    // 在解锁完成前根本不渲染，所以最后一帧必须尽量长得像桌面，否则就是硬切。锁屏背景是「壁纸+模糊」，
++    // 而桌面壁纸（由 awww 画）是清晰的同一条壁纸 —— 最后 1000ms 把模糊层淡掉，解锁那一帧就与桌面
++    // 同图同清晰度，桌面（含窗口）接上时背景是连续的，那半秒停顿看上去就是「桌面还没有窗口」。
      SequentialAnimation {
          id: unlockAnim
  
--        ParallelAnimation {
--            Anim {
+         ParallelAnimation {
+             Anim {
 -                target: lockContent
 -                properties: "implicitWidth,implicitHeight"
 -                to: lockContent.size
@@ -47,22 +63,24 @@
 -            }
 -            Anim {
 -                target: content
--                property: "opacity"
--                to: 0
++                target: background
+                 property: "opacity"
+                 to: 0
 -                type: Anim.StandardSmall
 -            }
 -            Anim {
 -                target: lockIcon
 -                property: "opacity"
 -                to: 1
--                type: Anim.StandardLarge
--            }
--            Anim {
+                 type: Anim.StandardLarge
+             }
+             Anim {
 -                target: background
--                property: "opacity"
--                to: 0
--                type: Anim.StandardLarge
--            }
++                target: content
+                 property: "opacity"
+                 to: 0
+                 type: Anim.StandardLarge
+             }
 -            SequentialAnimation {
 -                PauseAnimation {
 -                    duration: Tokens.anim.durations.small
@@ -74,29 +92,26 @@
 -                    to: 0
 -                }
 -            }
-+        Anim {
-+            target: content
-+            property: "opacity"
-+            to: 0
-+            type: Anim.StandardSmall
          }
 +
          PropertyAction {
              target: root.lock
              property: "locked"
-@@ -85,6 +49,9 @@
+@@ -85,6 +64,9 @@
          }
      }
  
-+    // 本地补丁 0007：上锁只做淡入。
-+    // 上游这里是 lockContent 的 scale 0→1 + rotation→360（锁块转一圈放大），锁图标同时转一圈再淡出。
++    // 本地补丁 0007：上锁只做淡入（2026-09-13 用户要求「再明显一些、长一些」→ 时长取 extraLarge = 1000ms）。
++    // 上游这里是 lockContent 的 scale 0→1 + rotation→360（锁块转一圈放大），锁图标同时转一圈再淡出；
 +    // 现在只淡入背景和密码框，没有任何旋转/缩放。
      ParallelAnimation {
          id: initAnim
  
-@@ -96,62 +63,11 @@
+@@ -95,85 +77,54 @@
+             property: "opacity"
              to: 1
              type: Anim.StandardLarge
++            duration: Tokens.anim.durations.extraLarge
          }
 -        SequentialAnimation {
 -            ParallelAnimation {
@@ -159,10 +174,60 @@
 +            property: "opacity"
 +            to: 1
 +            type: Anim.StandardLarge
++            duration: Tokens.anim.durations.extraLarge
          }
      }
  
-@@ -192,55 +108,22 @@
++    // 背景 = 两层同一条壁纸：下面清晰（= 桌面看到的样子），上面一层盖着模糊（= 锁屏的样子）。
++    //
++    // 注意：模糊**不能**做成「一个背景 + layer.effect 里动画它」——实测 `layer.effect` 返回的是
++    // QQmlComponent 而不是效果对象（`bg.layer.effect` 的 keys 只有 objectName/status/url/createObject…），
++    // 所以既拿不到里面声明的 id（报 `ReferenceError: bgBlur is not defined`），也没法动画它的属性
++    // （`Cannot animate non-existent property "blur"`）。改成两层、只动画 Item 的 opacity 才可靠。
+     Item {
+         id: background
+ 
+         anchors.fill: parent
+         opacity: 0
+ 
+-        layer.enabled: true
+-        layer.effect: MultiEffect {
+-            autoPaddingEnabled: false
+-            blurEnabled: true
+-            blur: 1
+-            blurMax: 64
+-            blurMultiplier: 1
+-        }
+-
+         Loader {
+             anchors.fill: parent
+             sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
+         }
++
++        Item {
++            id: blurLayer
++
++            anchors.fill: parent
++            opacity: 1
++
++            layer.enabled: true
++            layer.effect: MultiEffect {
++                autoPaddingEnabled: false
++                blurEnabled: true
++                blur: 1
++                blurMax: 64
++                blurMultiplier: 1
++            }
++
++            Loader {
++                anchors.fill: parent
++                sourceComponent: Config.lock.useWallpaper ? wallpaperBackground : screencopyBackground
++            }
++        }
+     }
+ 
+     Component {
+@@ -192,55 +143,22 @@
          }
      }
  
@@ -178,7 +243,7 @@
 -        implicitWidth: size
 -        implicitHeight: size
 +        // 本地补丁 0007：上游那个「大面板」（lockContent + lockBg + 中心锁图标）整个删掉了，
-+        // 现在屏幕上只有密码框 + 状态行这一组：宽度取 Center 的 preferredWidth，高度由内容撑开，
++        // 屏幕上是「密码框 + 状态行」这一组：宽度取 Center 的 preferredWidth、高度由内容撑开，
 +        // 水平居中、贴屏幕底部，只留 extraExtraLarge(48) 的下边距。
 +        width: implicitWidth
 +        height: implicitHeight
