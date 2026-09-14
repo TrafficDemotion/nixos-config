@@ -1,0 +1,35 @@
+UI 音效：popup / 面板 / dashboard 切页 一概不出声（用户要求）
+
+把 panel()/popout()/popoutClose()/page() 四处的 play(...) 换成空实现——挂点都留着，
+想恢复哪一条就把那行注释换回 play(...)。点击/开关/滑条/滚轮/开关窗/切工作区/截图/录屏/锁屏照旧。
+--- a/services/UiSounds.qml
++++ b/services/UiSounds.qml
+@@ -80,7 +80,7 @@
+     }
+ 
+     function panel(): void {
+-        play("ui-open.wav", 120);
++        // 2026-09-13 用户要求：popup / 面板 / 切页 一概不出声（想恢复就把这行注释换成 play(...)）
+     }
+ 
+     function shutter(): void {
+@@ -99,16 +99,16 @@
+     // 2026-09-13 用户要求去掉 250ms「刚响过就别响」的抑制 —— 那个规则让「点一下再开面板/切页」
+     // 的那一下被吞掉，听感就是"时不时不响"。现在照响（代价：click + 面板音两声）。
+     function page(): void {
+-        play("ui-open.wav", 150);
++        // 2026-09-13 用户要求：popup / 面板 / 切页 一概不出声（想恢复就把这行注释换成 play(...)）
+     }
+ 
+     // 竖栏 popout（audio/network/bluetooth/battery/tray/power）——hover 开出来的，不会和点击音叠
+     function popout(): void {
+-        play("ui-open.wav", 150);
++        // 2026-09-13 用户要求：popup / 面板 / 切页 一概不出声（想恢复就把这行注释换成 play(...)）
+     }
+ 
+     // popout 收起（Undock 音，比打开那条轻）
+     function popoutClose(): void {
+-        play("ui-close.wav", 200);
++        // 2026-09-13 用户要求：popup / 面板 / 切页 一概不出声（想恢复就把这行注释换成 play(...)）
+     }
+ }
