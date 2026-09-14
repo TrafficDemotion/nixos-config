@@ -13,6 +13,7 @@ import os
 import queue
 import subprocess
 import sys
+import time
 import threading
 import wave
 
@@ -20,7 +21,7 @@ FIFO = os.environ.get("SFX_FIFO", "/run/user/1000/sfx.fifo")
 DIR = os.environ.get("SFX_DIR", os.path.expanduser("~/.local/share/sfx"))
 RATE, CH = 48000, 2
 BLOCK = 256                      # 静音块 = 5.3ms，块越小注入越及时
-PIPE_BYTES = 8192                # pw-cat stdin 的管道缓冲 = 42ms（4KiB=21ms 更快但更易 xrun）
+PIPE_BYTES = 4096
 SIL = b"\x00" * (BLOCK * CH * 2)
 
 # 预解码所有 wav 到内存（16bit 48k 立体声）
@@ -64,7 +65,7 @@ def main():
 
     player = subprocess.Popen(
         ["pw-cat", "--playback", "--raw", "--rate", str(RATE),
-         "--channels", str(CH), "--format", "s16", "-"],
+         "--channels", str(CH), "--format", "s16", "--latency", "20ms", "-"],
         stdin=subprocess.PIPE)
     try:
         fcntl.fcntl(player.stdin.fileno(), fcntl.F_SETPIPE_SZ, PIPE_BYTES)
@@ -78,6 +79,7 @@ def main():
             chunk = SIL
         player.stdin.write(chunk)
         player.stdin.flush()
+        time.sleep(BLOCK / RATE * 0.9)
 
 
 if __name__ == "__main__":
