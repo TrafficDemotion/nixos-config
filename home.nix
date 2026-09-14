@@ -49,6 +49,7 @@
             ./patches/caelestia/0004-ui-sounds-events.patch
             ./patches/caelestia/0005-ui-sounds-tab-popout.patch
             ./patches/caelestia/0006-ui-sounds-drawers-wheel.patch
+            ./patches/caelestia/0009-ui-sounds-fifo.patch
             ./patches/caelestia/0007-lock-minimal-fade.patch
             ./patches/caelestia/0008-lock-no-password-hint.patch
           ];
@@ -284,6 +285,25 @@
   # 重装外壳包都会触发）时，从启动器/栏里开出来的 librewolf、kitty 全在它的 cgroup 里，
   # 会被一起 SIGTERM。改成只终止主进程（qs 自己），已开的应用留着。
   systemd.user.services.caelestia.Service.KillMode = "process";
+
+
+  # ── 常驻音效播放器（2026-09-13）──
+  # 每条音都新起 pw-play 要 ~110ms（新建 PipeWire 客户端+流协商，实测与蓝牙无关）。
+  # 这个用户服务把一条 pw-cat 原始输出流一直开着（空闲喂静音），音效名经 FIFO
+  # ~/.local/state 下的 /run/user/1000/sfx.fifo 一行一个送进来 → 起播 ~40ms。
+  # 停掉它 = 自动退回 pw-play（UiSounds.play() 里判断 FIFO 是否存在）。
+  systemd.user.services.sfx-player = {
+    Unit = {
+      Description = "Persistent UI sound player (PipeWire)";
+      After = [ "pipewire.service" "wireplumber.service" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.python3}/bin/python3 ${./sfx/sfx-player.py}";
+      Restart = "always";
+      RestartSec = 2;
+    };
+    Install.WantedBy = [ "default.target" ];
+  };
 
   programs.kitty = {
     enable = true;

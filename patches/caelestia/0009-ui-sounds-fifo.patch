@@ -1,0 +1,29 @@
+UI 音效：走常驻播放器（FIFO），把每条音「新建 PipeWire 客户端」的 ~110ms 拿掉
+
+UiSounds.play()：FIFO 在 → printf 音效名进去（一次 sh，3-5ms）；FIFO 不在 → 原样 pw-play。
+服务本体 = /etc/nixos/sfx/sfx-player.py（home.nix 的 systemd.user.services.sfx-player）。
+--- a/services/UiSounds.qml
++++ b/services/UiSounds.qml
+@@ -18,6 +18,9 @@
+     // 再 rebuild（外壳会重启一次；KillMode=process 已保证不会连坐你的应用）。
+     property bool enabled: Quickshell.env("CAELESTIA_UI_SOUNDS") !== "0"
+     readonly property string dir: `${Quickshell.env("HOME")}/.local/share/sfx/`
++    // 常驻播放器（home.nix 的 systemd.user.services.sfx-player）用的 FIFO；不在就退回 player
++    readonly property string fifo: `${Quickshell.env("XDG_RUNTIME_DIR")}/sfx.fifo`
++    readonly property string player: "pw-play"
+ 
+     // 同一文件的最小间隔（毫秒）——拖动/连点时别糊成一片
+     property var lastPlayed: ({})
+@@ -33,7 +36,11 @@
+             return;
+         lastPlayed[file] = now;
+         lastAny = now;
+-        Quickshell.execDetached(["pw-play", dir + file]);
++        // 常驻播放器（sfx-player.service）在跑 → 走 FIFO：省掉每条音新建 PipeWire 客户端的 ~110ms；
++        // 它不在就退回 pw-play。一次 sh 里判断两件事，没有状态要维护。
++        const name = file.replace(/\.wav$/, "");
++        Quickshell.execDetached(["sh", "-c",
++            `if [ -p ${fifo} ]; then printf '%s\\n' ${name} > ${fifo}; else ${player} ${dir}${file}; fi`]);
+     }
+ 
+     // 面板开合常常紧跟着一次点击音 → 250ms 内已经响过就跳过，免得一次操作听成两声
