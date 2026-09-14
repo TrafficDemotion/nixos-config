@@ -348,10 +348,6 @@
   # ════════════════════════════ 音频 ════════════════════════════
 
   security.rtkit.enable = true;
-  # 默认输出 = 通过直通的 ASUS USB 音频（2026-09-13）；拔掉时 WirePlumber 自动回落蓝牙
-  services.pipewire.wireplumber.extraConfig."51-default-sink"."default-nodes".rules = [
-    { matches = [ { "node.name" = "~alsa_output.usb.*" } ]; priority = 1; }
-  ];
 
   services.pipewire = {
     enable = true;
