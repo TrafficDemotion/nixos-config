@@ -304,6 +304,22 @@
       "nofail"
     ];
   };
+  fileSystems."/mnt/truenas/DOWNLOAD" = {
+    device = "//192.168.2.120/DOWNLOAD";
+    fsType = "cifs";
+    options = [
+      "credentials=/etc/samba/truenas-credentials"
+      "vers=3.0"
+      "uid=1000"
+      "gid=100"
+      "file_mode=0664"
+      "dir_mode=0775"
+      "x-systemd.automount"
+      "x-systemd.idle-timeout=60"
+      "_netdev"
+      "nofail"
+    ];
+  };
 
   # ═══════════════════════ 桌面：Hyprland + SDDM ═══════════════════════
 
