@@ -50,6 +50,7 @@
             ./patches/caelestia/0005-ui-sounds-tab-popout.patch
             ./patches/caelestia/0006-ui-sounds-drawers-wheel.patch
             ./patches/caelestia/0009-ui-sounds-fifo.patch
+            ./patches/caelestia/0010-ui-sounds-no-throttle.patch
             ./patches/caelestia/0007-lock-minimal-fade.patch
             ./patches/caelestia/0008-lock-no-password-hint.patch
           ];
@@ -274,6 +275,8 @@
     "sfx/ui-toggle-on.wav".source = ./sfx/ui-toggle-on.wav;
     "sfx/ui-toggle-off.wav".source = ./sfx/ui-toggle-off.wav;
     "sfx/ui-scroll.wav".source = ./sfx/ui-scroll.wav;
+    "sfx/ui-open.wav".source = ./sfx/ui-open.wav;
+    "sfx/ui-close.wav".source = ./sfx/ui-close.wav;
     # 事件级（patches/caelestia/0004-ui-sounds-events.patch）
     "sfx/unlock.wav".source = ./sfx/unlock.wav;
     "sfx/video-record.wav".source = ./sfx/video-record.wav;

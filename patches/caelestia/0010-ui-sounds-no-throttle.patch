@@ -1,0 +1,40 @@
+UI 音效：去掉 250ms 抑制（面板/切页照响）+ 面板开合用 Dock/Undock 两条独立音
+
+用户反馈「快速交互时不时不响、有断层感」——实测不是丢音，是 playIfQuiet(250ms) 把
+紧跟点击之后的面板/切页音吞掉了。现在一律 play()。同时把面板音从 workspace-switch.wav
+换成 ui-open.wav（AOSP Dock）/ ui-close.wav（Undock），与工作区那条区分开。
+--- a/services/UiSounds.qml
++++ b/services/UiSounds.qml
+@@ -80,7 +80,7 @@
+     }
+ 
+     function panel(): void {
+-        playIfQuiet("workspace-switch.wav", 120, 250);
++        play("ui-open.wav", 120);
+     }
+ 
+     function shutter(): void {
+@@ -96,17 +96,19 @@
+     }
+ 
+     // Dashboard 切页：只在页码真的变了时响（滚到两头的空滚不响）
++    // 2026-09-13 用户要求去掉 250ms「刚响过就别响」的抑制 —— 那个规则让「点一下再开面板/切页」
++    // 的那一下被吞掉，听感就是"时不时不响"。现在照响（代价：click + 面板音两声）。
+     function page(): void {
+-        playIfQuiet("workspace-switch.wav", 150, 250);
++        play("ui-open.wav", 150);
+     }
+ 
+     // 竖栏 popout（audio/network/bluetooth/battery/tray/power）——hover 开出来的，不会和点击音叠
+     function popout(): void {
+-        play("workspace-switch.wav", 150);
++        play("ui-open.wav", 150);
+     }
+ 
+-    // popout 收起：用「关窗」那条低音，比打开那条轻
++    // popout 收起（Undock 音，比打开那条轻）
+     function popoutClose(): void {
+-        play("window-close.wav", 200);
++        play("ui-close.wav", 200);
+     }
+ }
