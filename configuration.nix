@@ -50,6 +50,14 @@
     # 必须两条一起用：连接器处于 disconnected 时 i915 根本不去读 EDID，
     # 那份固件 EDID 就永远轮不到（实测：光有 edid_firmware 时该口状态仍是 disconnected）。
     "video=HDMI-A-1:2560x1440@60e"
+    # memmap=74M$0x4e000000：把宿主 BIOS 给核显预留的 DVMT 区（宿主 DMAR 里报的 RMRR
+    # 0x4e000000–0x527fffff，恰好 74 MiB）从 guest 的可用内存里摘掉。
+    # 原因：vfio/QEMU 不给这一段在 IOMMU 里建映射，而 guest 内核把它当普通 System RAM
+    # （/proc/iomem: 00100000-7b68afff）用；i915 的 buffer 一旦落在那里，核显 DMA 就被
+    # IOMMU 中止 → 显示引擎断流：FIFO underrun（屏幕纯色+顶部频闪），严重时
+    # flip_done timed out（画面定格、鼠标不动）。详见 ~/notes/nixos-display-freeze-20260914-rmrr.md
+    # ⚠️ 以后若改宿主 BIOS 的显存(DVMT)大小，RMRR 范围会变，这里的数值要按新的重算。
+    "memmap=74M$0x4e000000"
   ];
   hardware.firmware = [
     (pkgs.runCommandLocal "edid-aoc-q24g50f" { } ''
