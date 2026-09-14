@@ -1,0 +1,33 @@
+UI 音效：把启动器唤出音与 dashboard 切页音加回来（其余 popup 仍静音）
+
+0011 一刀切静音了 panel/popout/popoutClose/page；用户反馈「launcher 唤出」与「dashboard 换页」要保留。
+做法：新增 UiSounds.launcher()，components/ScreenState.qml 的 onLauncherChanged 改调它；
+page() 恢复出声。托盘 popout、其他抽屉（session/sidebar/utilities/osd）保持静音。
+--- a/services/UiSounds.qml
++++ b/services/UiSounds.qml
+@@ -92,7 +92,13 @@
+     // 2026-09-13 用户要求去掉 250ms「刚响过就别响」的抑制 —— 那个规则让「点一下再开面板/切页」
+     // 的那一下被吞掉，听感就是"时不时不响"。现在照响（代价：click + 面板音两声）。
+     function page(): void {
+-        // 2026-09-13 用户要求：popup / 面板 / 切页 一概不出声（想恢复就把这行注释换成 play(...)）
++        // dashboard 切页：用户要求保留（只在真的换页时响一次）
++        play("ui-open.wav", 150);
++    }
++
++    // 启动器（单按 Win 唤出）——用户要求保留这一条
++    function launcher(): void {
++        play("ui-open.wav", 120);
+     }
+ 
+     // 竖栏 popout（audio/network/bluetooth/battery/tray/power）——hover 开出来的，不会和点击音叠
+--- a/components/ScreenState.qml
++++ b/components/ScreenState.qml
+@@ -16,7 +16,7 @@
+     // 本地补丁：抽屉/面板开合音。`bar` 不挂（它是竖栏本身的显示状态，鼠标一动就变）。
+     onOsdChanged: UiSounds.panel()
+     onSessionChanged: UiSounds.panel()
+-    onLauncherChanged: UiSounds.panel()
++    onLauncherChanged: UiSounds.launcher()
+     onDashboardChanged: UiSounds.panel()
+     onUtilitiesChanged: UiSounds.panel()
+     onSidebarChanged: UiSounds.panel()

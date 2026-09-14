@@ -51,6 +51,7 @@
             ./patches/caelestia/0006-ui-sounds-drawers-wheel.patch
             ./patches/caelestia/0010-ui-sounds-no-throttle.patch
             ./patches/caelestia/0011-ui-sounds-no-popup.patch
+            ./patches/caelestia/0012-ui-sounds-launcher-page.patch
             ./patches/caelestia/0007-lock-minimal-fade.patch
             ./patches/caelestia/0008-lock-no-password-hint.patch
           ];
