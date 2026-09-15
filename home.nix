@@ -243,21 +243,11 @@
     };
   };
 
-  # ═══════════════ 终端：kitty（配色跟随 Caelestia 的壁纸取色）══════════════════
-  # 配色不在这里写死，而是由 Caelestia 从当前壁纸现算，渲染到
-  #   ~/.local/state/caelestia/theme/kitty.conf
-  # 再用 kitty 自己的 include 引进来（settings 里那一行）。整条链路：
-  #   模板源文件 /etc/nixos/caelestia/kitty.conf
-  #     → HM 复制到 ~/.config/caelestia/templates/kitty.conf（见下面的 xdg.configFile）
-  #     → 换壁纸 / `caelestia scheme set` 时，Caelestia 的 CLI 用它自带的
-  #       user-template 机制（apply_user_templates）把模板用当前配色重渲染一遍
-  #     → kitty 读 include，新开的窗口就是新配色
-  # 以前的问题：Caelestia 只会往已经开着的终端推 OSC 序列（即时变色），
-  # 而新开的窗口又回去读这里写死的 Catppuccin —— 于是「有的窗口动态、有的静态」。
-  # 现在两条路用的是同一组颜色（模板里的键就是照那份 OSC 序列挑的：surface/onSurface/
-  # secondary/term0..15），不会互相打架。
-  # 想退回静态配色：把 include 那行换成备份 home.nix.bak-20260913-caelestia-colours
-  # 里那批 background/color0..15 键，并删掉 ~/.config/caelestia/templates/ 下那两份。
+  # ═══════════════ 终端：kitty（配色 = Catppuccin Mocha，写死在下面）══════════════════
+  # 2026-09-15 按用户要求回滚：不再跟随 Caelestia 的壁纸取色。颜色直接写在 settings 里，
+  # 与 nvim 那边（catppuccin mocha）同一套。原先的"跟随壁纸"链路（模板 → Caelestia CLI
+  # 渲染 → kitty include / nvim color_overrides）已整条删掉；想恢复看
+  # home.nix.bak-20260913-caelestia-colours 与 nvim/init.lua.bak-20260913-caelestia-colours。
   # ═══════════════════ UI 交互音效素材（pixel） ═══════════════════
   # 音源 = AOSP/LineageOS 的 UI 音（data/sounds/effects/Effect_Tick.ogg，Apache-2.0），
   # 用 ffmpeg 转成 48k 立体声 wav、按事件做了音高/音量区分，落在 ~/.local/share/sfx/
@@ -299,19 +289,45 @@
       # 控制文字大小的就是这个 font_size，默认 11.0 pt → 现在 10.0。
       # 想再调：改这里的数字再 rebuild；临时看效果可在窗口里按 Ctrl+Shift+加/减缩放（不落盘）。
       font_size = 10.0;
+      background = "#1e1e2e";
+      foreground = "#cdd6f4";
+      selection_background = "#585b70";
+      selection_foreground = "#cdd6f4";
+      cursor = "#f5e0dc";
+      cursor_text_color = "#1e1e2e";
       # 光标拖尾（2026-09-12 起，用户要 neovide 那种观感；kitty 没有平滑滑行/粒子，
       # cursor_trail 是官方唯一对应特效）：
       #   300  = 光标在一位停留 >300ms 后的移动才启动拖尾（默认 0 = 关）
       #   decay "0.15 0.6" = 残影最快/最慢衰减秒数（默认 "0.1 0.4"，调大＝拖尾更长）
       #   start_threshold 1 = 横/纵每移动一格都触发（默认 2）
-      # 颜色沿用 cursor_trail_color 默认 none ＝ 光标背景色（现在也跟着配色变）
+      # 颜色沿用 cursor_trail_color 默认 none ＝ 光标背景色 #f5e0dc
       cursor_trail = 300;
       cursor_trail_decay = "0.15 0.6";
       cursor_trail_start_threshold = 1;
-      # 颜色全部来自 Caelestia 渲染出来的那份（链路见上面注释）。
-      # 这里已不写任何颜色键，所以不用担心 include 之间的覆盖顺序。
-      # kitty 会把 include 的路径做 ~ 展开；文件缺失时只记一条日志、不会报错停用配置。
-      include = "~/.local/state/caelestia/theme/kitty.conf";
+      url_color = "#f5e0dc";
+      active_border_color = "#cba6f7";
+      inactive_border_color = "#6c7086";
+      active_tab_background = "#cba6f7";
+      active_tab_foreground = "#1e1e2e";
+      inactive_tab_background = "#181825";
+      inactive_tab_foreground = "#cdd6f4";
+      tab_bar_background = "#181825";
+      color0 = "#45475a";
+      color8 = "#585b70";
+      color1 = "#f38ba8";
+      color9 = "#f38ba8";
+      color2 = "#a6e3a1";
+      color10 = "#a6e3a1";
+      color3 = "#f9e2af";
+      color11 = "#f9e2af";
+      color4 = "#89b4fa";
+      color12 = "#89b4fa";
+      color5 = "#f5c2e7";
+      color13 = "#f5c2e7";
+      color6 = "#94e2d5";
+      color14 = "#94e2d5";
+      color7 = "#bac2de";
+      color15 = "#a6adc8";
     };
   };
 
@@ -634,14 +650,6 @@
   # ═══════════════════ 桌面配置（软链进 ~/.config）═══════════════════
   # Hyprland 0.55 起配置用 Lua：~/.config/hypr/hyprland.lua
   xdg.configFile."hypr/hyprland.lua".source = ./hypr/hyprland.lua;
-  # Caelestia 的「用户模板」：~/.config/caelestia/templates/ 下的每个文件都会被
-  # Caelestia 的 CLI 在换壁纸/换配色时用当前配色重渲染一遍，写到
-  # ~/.local/state/caelestia/theme/<同名文件>。这里用 HM 声明这两份模板的副本
-  # （真正的渲染是 Caelestia 自己做的，没有自造脚本；样式与颜色名见两个源文件里的注释）：
-  #   kitty.conf                → kitty 的 include 目标（终端配色）
-  #   catppuccin-overrides.lua  → nvim 的 color_overrides（编辑器配色）
-  xdg.configFile."caelestia/templates/kitty.conf".source = ./caelestia/kitty.conf;
-  xdg.configFile."caelestia/templates/catppuccin-overrides.lua".source = ./caelestia/catppuccin-overrides.lua;
 
   # ═══════════════════ 会话环境变量 ═══════════════════
   home.sessionVariables = {
