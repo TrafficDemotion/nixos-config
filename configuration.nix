@@ -269,6 +269,12 @@
   };
   nixpkgs.config.allowUnfree = true;
 
+  # ── 文档（2026-09-15：用户不要手册）───────────────────────────────
+  # documentation.nixos.enable 默认 true，会连带把 nixos-manual-html、nixos-help
+  # 和启动器里的 “NixOS Manual” 条目（nixos-manual.desktop）、以及 nix-manual
+  # 的 man 页一起装进系统闭包。这里关掉；系统命令自带的其它 man 页不受影响。
+  documentation.nixos.enable = false;
+
   # ═════════════════════════ NAS（TrueNAS CIFS）═════════════════════
 
   fileSystems."/mnt/truenas/DATA" = {
