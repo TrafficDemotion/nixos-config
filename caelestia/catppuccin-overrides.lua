@@ -43,7 +43,7 @@ return {
     surface1 = "#{{ surface1.hex }}",
     surface0 = "#{{ surface0.hex }}",
     base = "#{{ surfaceContainer.hex }}",      -- 背景：M3 tone12（原来的 base=tone6≈纯黑）
-    mantle = "#{{ surfaceContainerLow.hex }}", -- 侧栏/浮动窗口底：比背景暗一档
-    crust = "#{{ surfaceContainerLowest.hex }}", -- 最深的一档（分割线、深色区块）
+    mantle = "#{{ surfaceContainerLow.hex }}", -- 侧栏/浮动窗口底（dark 下比背景暗、light 下比背景亮一档）
+    crust = "#{{ surfaceContainerLowest.hex }}", -- 容器最外一档（dark≈纯黑、light≈纯白）
   },
 }
