@@ -744,6 +744,10 @@
     # 否则启动就报 "chafa rendering failed"。
     inputs.anifetch.packages.${pkgs.stdenv.hostPlatform.system}.default
     chafa
+
+    # enableCompletion = false 之后 HM 不再夹带它（见 programs.zsh 段），
+    # 但 `nix` / `nixos-rebuild` / `nix-shell` 这些命令的补全全靠它 → 显式补回来。
+    nix-zsh-completions
   ];
 
   # ═══════════════════ 桌面配置（软链进 ~/.config）═══════════════════
@@ -791,15 +795,42 @@
   # ═══════════════════ zsh ═══════════════════
   programs.zsh = {
     enable = true;
+    # compinit 现在由 home-manager 自己跑（zsh-autocomplete 那行是注释状态）。
+    # ⚠️ 这两个开关要和下面 zinit 段里的 autocomplete 那行**一起**动：
+    # 重新启用 zsh-autocomplete 时，要把它那行取消注释、并把这里改回
+    # enableCompletion = false —— 它的 README 要求「删掉所有 compinit 调用」，
+    # 其中 Nix 一节的原话就是 programs.zsh.enableCompletion = false。
     enableCompletion = true;
-    autosuggestion.enable = true;
-    syntaxHighlighting.enable = true;
+    # 插件改由 zinit 统一管理（见下面 initContent 顶部的 zinit 段）。
+    # HM 这两个开关各自会 source 一份插件，和 zinit 同时开就是重复加载
+    # （autosuggestions 会叠两套 widget、syntax-highlighting 会重复包 zle）→ 关掉。
+    autosuggestion.enable = false;
+    syntaxHighlighting.enable = false;
     history = {
       size = 10000;
       save = 10000;
       share = true;
     };
     initContent = ''
+      # ── zinit（zsh 插件管理器）＋ 插件 ──────────────────────────
+      # 本体来自 nixpkgs（钉版本，不走官网那条 curl | sh 的在线引导脚本）；
+      # 插件由 zinit 自己 clone 到 ~/.local/share/zinit/plugins/。
+      # 以后加插件就是在下面加一行：zinit light <user>/<repo>。
+      source ${pkgs.zinit}/share/zinit/zinit.zsh
+
+      # 加载顺序有硬要求，别乱挪：
+      # ① zsh-autocomplete：**2026-09-16 起暂时停用**（用户要先只用 autosuggestions +
+      #    fzf-tab 跑一段时间看看）。它与 fzf-tab 抢同一套补全 UI —— 实测两者一起开时
+      #    Tab 归 fzf-tab、但 autocomplete 自己的「边走边列」不生效，空行按 ↑ 还会报
+      #    `command not found: _autocomplete__history_lines` / `_autocomplete__unambiguous`。
+      #    想启用：取消下面这行注释，并把 programs.zsh.enableCompletion 改回 false
+      #    （它要自己接管 compinit），且必须排在所有插件最前面加载。
+      # zinit light marlonrichert/zsh-autocomplete
+      # ② fzf-tab 要在 compinit 之后、在会包 widget 的插件（autosuggestions /
+      #    syntax-highlighting）之前 —— 见它的 README 安装说明。
+      zinit light Aloxaf/fzf-tab
+      zinit light zsh-users/zsh-autosuggestions
+
       zsh-newuser-install() { :; }
       # 开终端先播 anifetch 动效：它自己会把 fastfetch 的信息渲在 ASCII 动效右边，
       # 所以有它就不再单独跑 fastfetch。只在「交互式 + 真终端」里播；
@@ -822,6 +853,9 @@
         export DRIFT_TIMEOUT=180
         eval "$(drift shell-init zsh)"
       fi
+
+      # 语法高亮必须**最后**加载（zsh-syntax-highlighting FAQ：要在所有自定义 widget 之后）
+      zinit light zsh-users/zsh-syntax-highlighting
     '';
   };
 
