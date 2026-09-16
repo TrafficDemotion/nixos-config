@@ -63,18 +63,66 @@ vim.api.nvim_create_autocmd("FileType", {
 vim.g.loaded_netrw = 1
 vim.g.loaded_netrwPlugin = 1
 
--- ── 颜色主题：Catppuccin Mocha（和 kitty 的配色同一套）─────────────────────
--- 2026-09-15 按用户要求回滚：不再读 Caelestia 渲染的壁纸取色，固定用 catppuccin 自带的
--- Mocha（旧的动态方案见 nvim/init.lua.bak-20260913-caelestia-colours）。
-require("catppuccin").setup({
-  flavour = "mocha",
-  integrations = {
-    telescope = true,
-    neotree = true,
-    which_key = true,
-  },
-})
-vim.cmd.colorscheme("catppuccin")
+-- ── 颜色主题：跟随 Caelestia 的壁纸取色（用 catppuccin 那套键名）───────────
+-- 调色板由 Caelestia 从当前壁纸现算，渲染到
+--   ~/.local/state/caelestia/theme/catppuccin-overrides.lua
+-- （模板源文件 /etc/nixos/caelestia/catppuccin-overrides.lua，链路见那里的注释）。
+-- 文件不存在时（还没渲染过）退回 catppuccin 自带的 Mocha，所以不会没有配色。
+-- 换壁纸时 Caelestia 会重写这份文件，下面的 fs_event 监听会就地重载 —— 不用重开 nvim。
+local theme_dir = vim.fs.joinpath(vim.fn.expand("~"), ".local/state/caelestia/theme")
+local theme_file = "catppuccin-overrides.lua"
+
+-- 读那份渲染好的调色板；不存在或读不出就返回 nil（调用方退回 catppuccin 内置 Mocha）
+local function load_dyn_palette()
+  local path = vim.fs.joinpath(theme_dir, theme_file)
+  local f = io.open(path, "r")
+  if not f then
+    return nil
+  end
+  f:close()
+  local ok, mod = pcall(dofile, path)
+  if ok and type(mod) == "table" and type(mod.palette) == "table" then
+    return mod
+  end
+  return nil
+end
+
+local function apply_theme()
+  local dyn = load_dyn_palette()
+  local flavour = (dyn and dyn.mode == "light") and "latte" or "mocha"
+  require("catppuccin").setup({
+    flavour = flavour,
+    -- color_overrides[flavour] 盖在 catppuccin 内置调色板上（vim.tbl_deep_extend 的 "keep"）
+    color_overrides = dyn and { [flavour] = dyn.palette } or {},
+    integrations = {
+      telescope = true,
+      neotree = true,
+      which_key = true,
+    },
+  })
+  -- 显式点名 flavour：setup() 可以重复调用（它每次都用新的 user_conf 覆盖 options 并按内容哈希决定要不要重编），
+  -- 所以换壁纸后直接重跑这一段就能就地换色。
+  vim.cmd.colorscheme("catppuccin-" .. flavour)
+end
+
+apply_theme()
+
+-- ── 换壁纸时自动跟随 ─────────────────────────────────────────────────────────
+-- Caelestia 每次换壁纸/换配色方案都会重写上面那份 lua；这里监听它的【目录】而不是文件本身：
+-- CLI 用 atomic rename 写（os.replace 换 inode），盯着文件路径会在第一次替换后跟丢。
+do
+  local handle = vim.uv.new_fs_event()
+  local debounce = vim.uv.new_timer()
+  if handle and debounce and vim.uv.fs_stat(theme_dir) then
+    vim.uv.fs_event_start(handle, theme_dir, {}, function(err, name)
+      if err or (name and name ~= theme_file) then
+        return -- 目录里其它文件（如 kitty.conf）动了与我们无关
+      end
+      -- 一次写入可能触发多个事件，合并到 200ms 之后再重载
+      debounce:start(200, 0, vim.schedule_wrap(apply_theme))
+    end)
+  end
+end
 
 -- ── Treesitter ────────────────────────────────────────────────────────────
 -- nvim 0.12 自带 c/lua/vim/vimdoc/query/markdown 的解析器与高亮；
