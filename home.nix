@@ -447,7 +447,27 @@
     enable = true;
     package = null;
     enableZshIntegration = false;
-    settings.mgr.show_hidden = true;
+
+    # 「默认打开的文本编辑器」= 上游 [opener] edit 那一条（打开文本/代码文件、空文件时用它）。
+    # 上游默认 = `${EDITOR:-vi} %s` 且 block = true（把主屏让给终端里的 nvim）；
+    # 2026-09-16 按用户要求改成 GUI 的 neovide：orphan = true（不阻塞 yazi，yazi 退出后
+    # 窗口仍在），不用 block。
+    # 为什么写一条就等于整条替换：yazi 的配置是 deserialize-over 混入，而 Opener 是 HashMap，
+    # 同名键是整份覆盖而不是逐条追加（yazi-shim/src/toml/traits.rs 的
+    # HashMap::deserialize_over_with 直接 insert）——所以这里只会剩下面这一条。
+    # 注意 `*/` 那条文件夹规则用的第一个名字也是 edit（use = [ "edit", "open", "reveal" ]），
+    # 所以「对文件夹按 Enter / 选编辑」也会走 neovide（和之前走 nvim 是同一个位置）。
+    settings = {
+      mgr.show_hidden = true;
+      opener.edit = [
+        {
+          run = "neovide %s";
+          desc = "Neovide";
+          orphan = true;
+          for = "unix";
+        }
+      ];
+    };
 
     # 键位（2026-09-16 用户要求，先大写 N/K → 当日改成小写 n/k）：
     #   n → 在当前目录打开 neovide      k → 在当前目录打开 kitty
@@ -510,6 +530,56 @@
   # 回滚：删掉下面这条 + 把 config.toml 改回 'catppuccin' 即可（模板文件留着无害）。
   xdg.configFile."superfile/theme/caelestia.toml".source =
     config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.local/state/caelestia/theme/superfile.toml";
+
+  # ═══════════ 默认应用（XDG：文件管理器 / 终端 / 浏览器）＋ 隐藏条目 ═══════════
+  # 生效层级：~/.config/mimeapps.list（XDG_CONFIG_HOME，由本文件生成）优先于
+  # /etc/xdg/mimeapps.list 与各 XDG_DATA_DIRS 里的 mimeinfo.cache —— 所以「系统默认」
+  # 在这里声明就够，不用动 NixOS 的 xdg.mime。
+  #
+  # 文件管理器 = yazi：nixpkgs 的 yazi 自带 yazi.desktop
+  # （Exec=yazi %f, Terminal=true, MimeType=inode/directory），不必自己造 desktop 条目。
+  # 改之前 inode/directory 落到了 kitty-open.desktop（kitty 的 desktop 文件也声明了这个 MIME）。
+  # 浏览器 = librewolf.desktop（HM 装的那份，在 /etc/profiles/per-user/paan/share/applications）。
+  # 终端另有专门约定 x-scheme-handler/terminal；更通用的那条见下面的 terminal-exec。
+  xdg.mimeApps = {
+    enable = true;
+    defaultApplications = {
+      "inode/directory" = [ "yazi.desktop" ];
+      "text/html" = [ "librewolf.desktop" ];
+      "x-scheme-handler/http" = [ "librewolf.desktop" ];
+      "x-scheme-handler/https" = [ "librewolf.desktop" ];
+      "x-scheme-handler/terminal" = [ "kitty.desktop" ];
+    };
+  };
+
+  # 默认终端（xdg-terminal-exec，freedesktop 的 Default Terminal Execution 提案）：
+  # HM 的官方模块会装 xdg-terminal-exec 本体 + 写 ~/.config/xdg-terminals.list。
+  # Terminal=true 的 desktop 条目（比如上面的 yazi.desktop）在支持该规范的启动器里
+  # 就靠这个列表决定「用哪个终端把它跑起来」。
+  xdg.terminal-exec = {
+    enable = true;
+    settings.default = [ "kitty.desktop" ];
+  };
+
+  # 从启动器里藏掉两个系统自带条目 —— XDG 规范里「同 id 的文件取优先级最高的那份」，
+  # ~/.local/share/applications/<id>.desktop 正好压过 /run/current-system/sw 里那份：
+  #   uuctl              ← uwsm 自带（uwsm 本体是会话管理器，要继续留着，只是不要这个条目）
+  #   kbd-layout-viewer5 ← fcitx5-configtool 自带（启动器里显示为 Keyboard layout viewer）
+  # Hidden=true 是规范里「屏蔽下层同名条目」的写法（NoDisplay 只是「不在菜单里显示」）；
+  # exec 给 `true`：条目本身不可用是刻意的，给个能解析的命令免得判成无效条目又被下层顶回来。
+  # 不删包里的文件是因为要打 overlay 重建 uwsm / fcitx5 —— 见「能不用自造手段就不用」的约定。
+  xdg.desktopEntries = {
+    uuctl = {
+      name = "uuctl";
+      exec = "true";
+      settings.Hidden = "true";
+    };
+    kbd-layout-viewer5 = {
+      name = "Keyboard layout viewer";
+      exec = "true";
+      settings.Hidden = "true";
+    };
+  };
 
   # ═══════════════════ 浏览器：LibreWolf ═══════════════════
   # 包从 configuration.nix 挪到这里，跟 profile / 自定义 CSS / 设置一起由 home-manager 管。
