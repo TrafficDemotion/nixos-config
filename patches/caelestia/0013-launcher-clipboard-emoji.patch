@@ -256,10 +256,10 @@ index 0000000..3d0852f
 +}
 diff --git a/modules/launcher/services/Clipboard.qml b/modules/launcher/services/Clipboard.qml
 new file mode 100644
-index 0000000..4c8bfa1
+index 0000000..259f21a
 --- /dev/null
 +++ b/modules/launcher/services/Clipboard.qml
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,134 @@
 +// 剪贴板历史来源（Super+V 的「外壳内」版本）
 +//
 +// 数据源与 `caelestia clipboard` 命令完全相同：cliphist 的历史库。
@@ -352,7 +352,7 @@ index 0000000..4c8bfa1
 +
 +        property var target: null
 +
-+        interval: 500
++        interval: 250
 +        onTriggered: {
 +            if (target)
 +                target.screenState.launcher = false;
@@ -381,6 +381,8 @@ index 0000000..4c8bfa1
 +
 +        command: ["cliphist", "list"]
 +        stdout: StdioCollector {
++            // 保持 cliphist 的原生顺序（新→旧）。面板是从上往下渲染的（第一项就在最上面），
++            // 所以「最新在最上」本来就是对的 —— 2026-09-16 曾误判成从下往上而反转，截图核对后撤回。
 +            onStreamFinished: root.rawLines = text.split("\n").filter(line => line.includes("\t"))
 +        }
 +    }
@@ -394,7 +396,7 @@ index 0000000..4c8bfa1
 +}
 diff --git a/modules/launcher/services/Emojis.qml b/modules/launcher/services/Emojis.qml
 new file mode 100644
-index 0000000..d283604
+index 0000000..cc91700
 --- /dev/null
 +++ b/modules/launcher/services/Emojis.qml
 @@ -0,0 +1,98 @@
@@ -467,7 +469,7 @@ index 0000000..d283604
 +
 +        property var target: null
 +
-+        interval: 500
++        interval: 250
 +        onTriggered: {
 +            if (target)
 +                target.screenState.launcher = false;
