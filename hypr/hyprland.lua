@@ -240,7 +240,9 @@ hl.bind("SHIFT + ALT + TAB", hl.dsp.window.cycle_next({ next = false }), { repea
 -- 缩放窗口
 hl.bind(mainMod .. " + Equal", hl.dsp.window.resize({ x = 40, y = 0, relative = true }), { repeating = true })
 hl.bind(mainMod .. " + Minus", hl.dsp.window.resize({ x = -40, y = 0, relative = true }), { repeating = true })
-hl.bind(mainMod .. " + SHIFT + Equal", hl.dsp.window.resize({ x = 0, y = 40, relative = true }), { repeating = true })
+-- `SUPER + +`（= SUPER + SHIFT + Equal）按用户要求停用（2026-09-16，他按这个组合时窗口被拉高了）。
+-- 恢复办法：把下一行前面的 `-- ` 去掉。
+-- hl.bind(mainMod .. " + SHIFT + Equal", hl.dsp.window.resize({ x = 0, y = 40, relative = true }), { repeating = true })
 hl.bind(mainMod .. " + SHIFT + Minus", hl.dsp.window.resize({ x = 0, y = -40, relative = true }), { repeating = true })
 
 -- 焦点：SUPER + 方向键
