@@ -744,10 +744,6 @@
     # 否则启动就报 "chafa rendering failed"。
     inputs.anifetch.packages.${pkgs.stdenv.hostPlatform.system}.default
     chafa
-
-    # enableCompletion = false 之后 HM 不再夹带它（见 programs.zsh 段），
-    # 但 `nix` / `nixos-rebuild` / `nix-shell` 这些命令的补全全靠它 → 显式补回来。
-    nix-zsh-completions
   ];
 
   # ═══════════════════ 桌面配置（软链进 ~/.config）═══════════════════
@@ -799,7 +795,8 @@
     # ⚠️ 这两个开关要和下面 zinit 段里的 autocomplete 那行**一起**动：
     # 重新启用 zsh-autocomplete 时，要把它那行取消注释、并把这里改回
     # enableCompletion = false —— 它的 README 要求「删掉所有 compinit 调用」，
-    # 其中 Nix 一节的原话就是 programs.zsh.enableCompletion = false。
+    # 其中 Nix 一节的原话就是 programs.zsh.enableCompletion = false
+    # （那一关会连带丢掉 HM 夹带的 nix-zsh-completions，记得在 home.packages 里补回来）。
     enableCompletion = true;
     # 插件改由 zinit 统一管理（见下面 initContent 顶部的 zinit 段）。
     # HM 这两个开关各自会 source 一份插件，和 zinit 同时开就是重复加载
