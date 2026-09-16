@@ -469,29 +469,17 @@
       ];
     };
 
-    # 键位（2026-09-16 用户要求，先大写 N/K → 当日改成小写 n/k）：
-    #   n → 在当前目录打开 neovide      k → 在当前目录打开 kitty
+    # 键位（2026-09-16）：
     #   h / j / l → 关掉（绑成 noop：yazi 的“空动作”，内部遇到它会直接把这条 chord
     #                    过滤掉，见 yazi-config/src/keymap/chord.rs 的 noop()），
     #                    方向键不受影响，导航照旧。
-    # 代价（prepend 会顶掉同键的默认绑定）：小写 n 原本是“跳到下一个搜索结果”、
-    # k 原本是“上移一行”——前者没了（搜索后仍可用方向键/`N`… 注意 `N` 现在没绑），
-    # 后者本来就被上面的 noop 关掉了。要保留“下一个搜索结果”就换个键或改用 / 里的 <CR>。
-    # 为什么不用自己拼路径：yazi 的 shell 命令跑在【当前标签页的 cwd】里
-    # （yazi-actor/src/mgr/shell.rs: `let cwd = form.cwd.unwrap_or_else(|| cx.cwd().clone())`），
-    # 所以 `neovide .` / `kitty` 天然就是当前目录。
-    # --orphan = 脱离 yazi 的任务调度，yazi 退出后窗口不会被连带杀掉。
+    # 同一天还加过 n → 在当前目录开 neovide、k → 开 kitty，随后按用户要求撤掉 ——
+    # 撤掉后这两个键恢复 yazi 默认：k = 上移一行、n = 跳到下一个搜索结果。
+    # 想加回来就在下面列表里补一条（prepend 会顶掉同键的默认绑定，代价见上）：
+    #   { on = "n"; run = "shell --orphan 'neovide .'"; desc = "Open Neovide here"; }
+    # 顺带记着这种命令为什么不必自己拼路径：yazi 的 shell 命令跑在【当前标签页的 cwd】里
+    # （yazi-actor/src/mgr/shell.rs: `let cwd = form.cwd.unwrap_or_else(|| cx.cwd().clone())`）。
     keymap.mgr.prepend_keymap = [
-      {
-        on = "n";
-        run = "shell --orphan 'neovide .'";
-        desc = "Open Neovide here";
-      }
-      {
-        on = "k";
-        run = "shell --orphan 'kitty'";
-        desc = "Open kitty here";
-      }
       {
         on = "h";
         run = "noop";
