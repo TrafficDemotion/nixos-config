@@ -87,6 +87,56 @@ local function load_dyn_palette()
   return nil
 end
 
+-- ── 区块边界：顶边线（winbar）──────────────────────────────────────────────
+-- 想要 btop 那种「不同区域用制表符画出边界」的效果，nvim 能给的最多是三边：
+--   顶边 = 这一节（winbar：一条 ╭─ 标题 ────╮，可圆角、可把名字嵌进线里）
+--   底边 = statusline（就是 lualine 那条横条，本来就在窗口底部）
+--   中间竖线 = fillchars 的 vert + hl-WinSeparator（见下面 apply_custom_hl）
+-- 左右两条侧边【没有机制】：nvim 不为 split 窗口画边框（:h 'winborder' 只管浮窗）。
+-- 真·四边圆角框只有浮窗有（winborder = "rounded"，补全菜单 / telescope / which-key /
+-- Neo-tree float 都是它）—— 也就是 btop 那个 "rounded corners" 开关的对应物。
+-- 换观感只改下面这个表；不想要整块就把 enabled 改成 false（或删掉这一段）。
+local box = {
+  enabled = true,
+  rounded = true, -- true = ╭ ╮（圆角）; false = ┌ ┐（直角）
+  title = true, -- 把当前文件名 / Explorer 嵌进顶边线
+  fill = "─", -- 线本身：换 "━" 是粗线、"═" 是双线
+}
+
+local function box_top()
+  local w = vim.api.nvim_win_get_width(0)
+  if w < 5 then
+    return ""
+  end
+  local title = " "
+  if box.title then
+    local name
+    if vim.bo.filetype == "neo-tree" then
+      name = "Explorer"
+    else
+      name = vim.fn.expand("%:t")
+      if name == "" then
+        name = "[No Name]"
+      end
+    end
+    if vim.fn.strchars(name) <= w - 5 then
+      title = " " .. name .. " "
+    end
+  end
+  local tw = vim.fn.strchars(title)
+  local l, r = box.rounded and "╭" or "┌", box.rounded and "╮" or "┐"
+  return l .. "─" .. title .. string.rep(box.fill, w - 3 - tw) .. r
+end
+
+if box.enabled then
+  -- winbar 的表达式只能调用全局函数；包一层 pcall，免得求值失败时整行变成报错文本
+  _G.paan_box_top = function()
+    local ok, s = pcall(box_top)
+    return ok and s or ""
+  end
+  vim.o.winbar = "%{%v:lua.paan_box_top()%}"
+end
+
 -- ── 区块边界 / 缩进线：在主题之上再盖几笔 ─────────────────────────────────
 -- 这里管两类「用符号划出区块」的东西。两者都必须【在 colorscheme 之后】设置：
 -- :colorscheme 内部会 hi clear，之前设过的自定义组会被清掉，所以下面这段由
@@ -112,6 +162,8 @@ local function apply_custom_hl(pal)
     end
   end
   set("WinSeparator", "surface2") -- 竖直边界线（以及 laststatus=3 下的 ┤├┼）
+  set("WinBar", "surface2") -- 顶边线（当前窗口那份，见上面的 box 表）
+  set("WinBarNC", "surface1") -- 顶边线（非当前窗口的，比背景亮一点就够）
   set("MsgSeparator", "surface2") -- 命令行消息分隔条（默认 link 到 WinSeparator）
   set("NeoTreeWinSeparator", "surface2") -- neo-tree 侧栏自己那条边界线
   set("NeoTreeVertSplit", "surface2")
