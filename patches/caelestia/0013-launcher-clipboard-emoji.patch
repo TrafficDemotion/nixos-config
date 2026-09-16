@@ -75,7 +75,7 @@ index 4231a26..aa1fcbf 100644
      }
  
 diff --git a/modules/launcher/AppList.qml b/modules/launcher/AppList.qml
-index 185a606..d93a0ae 100644
+index 185a606..125f39d 100644
 --- a/modules/launcher/AppList.qml
 +++ b/modules/launcher/AppList.qml
 @@ -27,9 +27,13 @@ StyledListView {
@@ -104,22 +104,44 @@ index 185a606..d93a0ae 100644
          default:
              return Apps.search(text);
          }
-@@ -56,7 +64,13 @@ StyledListView {
+@@ -56,7 +64,12 @@ StyledListView {
  
      model: ScriptModel {
          values: root.resultsForText(root.displayText)
 -        onValuesChanged: root.currentIndex = 0
 +        onValuesChanged: {
 +            root.currentIndex = 0;
-+            // 只设 currentIndex 不够：列表设了 highlightFollowsCurrentItem: false，
-+            // 视图不会跟着当前项走，会停在原来的滚动位置 —— 于是「复制后条目回到第 1 行」
-+            // 用户看不见（面板还停在下面几行，看着像被点的条目滚走了）。这里显式滚回顶部。
-+            root.positionViewAtBeginning();
++            // 换模型（比如打字过滤）时也回到开头；Qt.callLater 等布局完成，
++            // 否则在模型刚更新时调用是无效的（踩过）。
++            Qt.callLater(root.resetScroll);
 +        }
      }
  
      spacing: Tokens.spacing.small
-@@ -87,6 +101,10 @@ StyledListView {
+@@ -84,9 +97,33 @@ StyledListView {
+ 
+     state: screenState.launcher ? requestedState : displayState
+ 
++    // 每次打开启动器都把列表拉回开头。原因：从面板复制一条剪贴板条目后，它在 cliphist 里
++    // 会变成最新（= 列表第 1 行），但视图（highlightFollowsCurrentItem: false）会停在原来的
++    // 滚动位置 → 看着像「点过的条目滚到列表底部去了」。
++    // 不能只靠 model 的 onValuesChanged：内容没变化时它不会触发（第二次打开就是这样）。
++    Connections {
++        target: root.screenState
++
++        function onLauncherChanged(): void {
++            if (root.screenState.launcher)
++                Qt.callLater(root.resetScroll);
++        }
++    }
++
++    // 把列表拉回最上面。positionViewAtBeginning() 在这个组件里不稳定（模型刚换/委托还在
++    // 异步创建时调用会被后续的布局盖掉），所以再显式把 contentY 压回 0。
++    function resetScroll(): void {
++        root.positionViewAtBeginning();
++        root.contentY = 0;
++    }
++
      onStateChanged: {
          if (state === "scheme" || state === "variant")
              Schemes.reload();
@@ -130,7 +152,7 @@ index 185a606..d93a0ae 100644
      }
  
      Component.onCompleted: displayText = search.text
-@@ -126,6 +144,20 @@ StyledListView {
+@@ -126,6 +163,20 @@ StyledListView {
              PropertyChanges {
                  root.delegate: variantItem
              }
@@ -151,7 +173,7 @@ index 185a606..d93a0ae 100644
          }
      ]
  
-@@ -287,6 +319,22 @@ StyledListView {
+@@ -287,6 +338,22 @@ StyledListView {
          }
      }
  
@@ -271,7 +293,7 @@ index 0000000..3d0852f
 +}
 diff --git a/modules/launcher/services/Clipboard.qml b/modules/launcher/services/Clipboard.qml
 new file mode 100644
-index 0000000..259f21a
+index 0000000..d43b5f2
 --- /dev/null
 +++ b/modules/launcher/services/Clipboard.qml
 @@ -0,0 +1,134 @@
@@ -396,8 +418,8 @@ index 0000000..259f21a
 +
 +        command: ["cliphist", "list"]
 +        stdout: StdioCollector {
-+            // 保持 cliphist 的原生顺序（新→旧）。面板是从上往下渲染的（第一项就在最上面），
-+            // 所以「最新在最上」本来就是对的 —— 2026-09-16 曾误判成从下往上而反转，截图核对后撤回。
++            // 保持 cliphist 的原生顺序（新→旧）：面板是从上往下渲染的，第一项就在最上面。
++            // 「打开时滚到最上面」由 AppList.qml 在 launcher 打开时显式做（见那里的注释）。
 +            onStreamFinished: root.rawLines = text.split("\n").filter(line => line.includes("\t"))
 +        }
 +    }
