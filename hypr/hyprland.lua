@@ -59,8 +59,10 @@ hl.env("LIBVA_DRIVER_NAME", "iHD") -- Intel 核显硬解/硬编（VA-API）
 ----  开机自启  ----
 ----------------------------
 hl.on("hyprland.start", function()
-  hl.exec_cmd("nm-applet --indicator") -- 托盘网络图标
   hl.exec_cmd("hyprpolkitagent") -- polkit 认证弹窗
+  -- 注：早期自己拼 shell 时这里还 exec 过 `nm-applet --indicator`（托盘网络图标），
+  -- 2026-09-16 删掉 —— 竖栏的网络图标与 Wi-Fi 面板是 Caelestia 自己实现的
+  -- （home.nix 的 bar.statusIcons 里的 network）。
   -- 壁纸守护进程（2026-09-13）：外壳自己不再画壁纸（见 home.nix 里
   -- settings.background.wallpaperEnabled = false），屏幕上的图由 awww 铺在 background 层。
   -- 它启动时会按输出从缓存恢复上次那张图（manpage：--no-cache 才是「不去缓存找」），

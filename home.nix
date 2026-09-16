@@ -695,8 +695,9 @@
   # ═══════════════════ 用户级软件包 ═══════════════════
   home.packages = with pkgs; [
     hyprpolkitagent # polkit 认证弹窗（Caelestia 不带）
-    networkmanagerapplet # 托盘网络图标
     qt6Packages.fcitx5-configtool # 输入法设置界面
+    # 注：早期自己拼 shell 时装的 networkmanagerapplet（托盘网络图标）已于 2026-09-16 删掉 ——
+    # 竖栏的网络状态图标（statusIcons 里的 network）与 Wi-Fi 面板是 Caelestia 自己实现的。
 
     # Caelestia CLI 的外部依赖：这些在 Nix 里只是它构建时的 buildInputs，
     # 不会自动进用户 profile，必须显式装上，否则剪贴板/截图/录屏/重启外壳都会失效。
@@ -739,6 +740,10 @@
   xdg.configFile."caelestia/templates/kitty.conf".source = ./caelestia/kitty.conf;
   xdg.configFile."caelestia/templates/catppuccin-overrides.lua".source = ./caelestia/catppuccin-overrides.lua;
   xdg.configFile."caelestia/templates/superfile.toml".source = ./caelestia/superfile.toml;
+  # 注：fuzzel（Super+V 的剪贴板列表 / Super+. 的 emoji 列表）不需要我们自己接模板 ——
+  # Caelestia CLI 的 utils/theme.py:apply_fuzzel() 每次换配色都会用它的内置模板重写
+  # ~/.config/fuzzel/fuzzel.ini（颜色取自当前壁纸调色板）。自己再声明一份会跟它打架
+  # （实测：CLI 的 atomic_write 会覆盖 HM 建的软链）。2026-09-16 试过后撤掉了。
 
   # ═══════════════════ 会话环境变量 ═══════════════════
   home.sessionVariables = {

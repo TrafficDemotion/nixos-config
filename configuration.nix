@@ -492,9 +492,10 @@
     tor-browser
     tor
     # Wayland / Hyprland 生态
+    # 注意：waybar / dunst / rofi 这些「早期自己拼 shell」的东西都已删掉 —— 现在
+    # 状态栏、通知（org.freedesktop.Notifications 由 quickshell 提供）、启动器、
+    # 剪贴板选择器全由 Caelestia 外壳负责。保留的是外壳真正会用到的外部命令行工具。
     kitty
-    waybar
-    dunst
     wl-clipboard
     grim
     slurp
