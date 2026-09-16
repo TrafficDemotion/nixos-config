@@ -9,6 +9,14 @@
 
   programs.home-manager.enable = true;
 
+  # ═══════════════════ 剪贴板历史（Caelestia 的 Super+V）═══════════════════
+  # caelestia-cli 的 `caelestia clipboard` 只是 `cliphist list | fuzzel --dmenu`：
+  # 它只读历史，不负责往历史里存东西。没有 watcher 时 cliphist 的库永远是空的，
+  # Super+V 会弹出一个空列表（看起来像坏了）。这个模块就是官方那个 watcher
+  # （wl-paste --watch cliphist store，另有 ... --type image 的那条），
+  # 由 home-manager 生成用户服务，不需要自己写脚本。
+  services.cliphist.enable = true;
+
   # ═══════════════════ 桌面外壳：Caelestia ═══════════════════
   # 状态栏 / 通知 / 启动器 / 仪表盘 / 锁屏 / 截图 / 剪贴板 全由它提供，
   # 由 home-manager 生成 systemd 用户服务（caelestia.service），不需要在 hyprland.lua 里 exec。

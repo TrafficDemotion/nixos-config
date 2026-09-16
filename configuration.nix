@@ -494,7 +494,6 @@
     # Wayland / Hyprland 生态
     kitty
     waybar
-    rofi
     dunst
     wl-clipboard
     grim
