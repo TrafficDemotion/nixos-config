@@ -276,9 +276,12 @@ hl.bind(mainMod .. " + SHIFT + S", hl.dsp.global("caelestia:screenshotFreeze"))
 hl.bind(mainMod .. " + SHIFT + ALT + S", hl.dsp.global("caelestia:screenshot"))
 hl.bind("CTRL + ALT + R", hl.dsp.exec_cmd("caelestia record"))
 
--- 剪贴板 / emoji（Caelestia CLI + fuzzel）
-hl.bind(mainMod .. " + V", bindSfx("workspace-switch.wav", hl.dsp.exec_cmd("pkill fuzzel || caelestia clipboard")))
-hl.bind(mainMod .. " + Period", bindSfx("workspace-switch.wav", hl.dsp.exec_cmd("pkill fuzzel || caelestia emoji -p")))
+-- 剪贴板 / emoji（2026-09-16 起）：改走外壳自己的启动器界面（本地补丁 0013，
+-- 见 home.nix 的 patches 列表）——`caelestia:clipboard` / `caelestia:emoji` 是外壳
+-- 注册的全局快捷键，列表由 AppList 画，跟外壳同一套组件与配色。
+-- 原来的 `caelestia clipboard` / `caelestia emoji -p`（fuzzel 版）仍然可用，只是不再绑键位。
+hl.bind(mainMod .. " + V", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:clipboard")))
+hl.bind(mainMod .. " + Period", bindSfx("workspace-switch.wav", hl.dsp.global("caelestia:emoji")))
 
 -- 音量（wpctl 来自 pipewire）
 hl.bind("XF86AudioRaiseVolume", hl.dsp.exec_cmd("wpctl set-mute @DEFAULT_AUDIO_SINK@ 0; wpctl set-volume -l 1 @DEFAULT_AUDIO_SINK@ 5%+"), { locked = true, repeating = true })

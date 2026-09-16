@@ -1,0 +1,451 @@
+diff --git a/components/ScreenState.qml b/components/ScreenState.qml
+index 1989ccb..5aafff8 100644
+--- a/components/ScreenState.qml
++++ b/components/ScreenState.qml
+@@ -26,4 +26,10 @@ PersistentProperties {
+     // 本地补丁：切 dashboard 页时响一次（滚轮 / 点击页签 / 拖动都算；滚到两头的空滚不算）
+     onDashboardTabChanged: UiSounds.page()
+     property date dashboardDate: new Date()
++
++    // 本地补丁（0013）：启动器的「预设模式」。非空时启动器直接进这个状态
++    // （clipboard / emoji），由 Super+V / Super+. 的全局快捷键或
++    // `caelestia-shell ipc call drawers clipboard|emoji` 设置；
++    // 启动器一关就复位（见 modules/launcher/Content.qml）。
++    property string launcherMode
+ }
+diff --git a/modules/Shortcuts.qml b/modules/Shortcuts.qml
+index 4231a26..aa1fcbf 100644
+--- a/modules/Shortcuts.qml
++++ b/modules/Shortcuts.qml
+@@ -12,6 +12,17 @@ Scope {
+     property bool launcherInterrupted
+     readonly property bool hasFullscreen: Hypr.focusedWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen > 1) ?? false
+ 
++    // 以指定模式打开启动器（clipboard / emoji）：把模式写进当前屏幕的 ScreenState，
++    // 由 modules/launcher/AppList.qml 的 stateForText() 认这个字段。
++    function openLauncherMode(mode: string): void {
++        if (root.hasFullscreen)
++            return;
++
++        const screenState = ShellState.forActive();
++        screenState.launcherMode = mode;
++        screenState.launcher = true;
++    }
++
+     // qmllint disable unresolved-type
+     CustomShortcut {
+         // qmllint enable unresolved-type
+@@ -82,6 +93,22 @@ Scope {
+         onPressed: root.launcherInterrupted = true
+     }
+ 
++    // qmllint disable unresolved-type
++    CustomShortcut {
++        // qmllint enable unresolved-type
++        name: "clipboard"
++        description: "Open launcher in clipboard history mode"
++        onPressed: root.openLauncherMode("clipboard")
++    }
++
++    // qmllint disable unresolved-type
++    CustomShortcut {
++        // qmllint enable unresolved-type
++        name: "emoji"
++        description: "Open launcher in emoji mode"
++        onPressed: root.openLauncherMode("emoji")
++    }
++
+     // qmllint disable unresolved-type
+     CustomShortcut {
+         // qmllint enable unresolved-type
+@@ -132,6 +159,15 @@ Scope {
+             return screenState[drawer] ? "1" : "0";
+         }
+ 
++        // 以指定模式打开启动器（等价于 Super+V / Super+.，方便脚本化验收）
++        function clipboard(): void {
++            root.openLauncherMode("clipboard");
++        }
++
++        function emoji(): void {
++            root.openLauncherMode("emoji");
++        }
++
+         target: "drawers"
+     }
+ 
+diff --git a/modules/launcher/AppList.qml b/modules/launcher/AppList.qml
+index 185a606..0222d4d 100644
+--- a/modules/launcher/AppList.qml
++++ b/modules/launcher/AppList.qml
+@@ -27,9 +27,13 @@ StyledListView {
+     }
+ 
+     function stateForText(text: string): string {
++        // 由快捷键/IPC 直接指定模式（Super+V / Super+.）：此时不看前缀
++        if (screenState.launcherMode !== "")
++            return screenState.launcherMode;
++
+         const prefix = GlobalConfig.launcher.actionPrefix;
+         if (text.startsWith(prefix)) {
+-            for (const action of ["calc", "scheme", "variant"])
++            for (const action of ["calc", "scheme", "variant", "clipboard", "emoji"])
+                 if (text.startsWith(`${prefix}${action} `))
+                     return action;
+ 
+@@ -49,6 +53,10 @@ StyledListView {
+             return Schemes.query(text);
+         case "variant":
+             return M3Variants.query(text);
++        case "clipboard":
++            return Clipboard.query(text);
++        case "emoji":
++            return Emojis.query(text);
+         default:
+             return Apps.search(text);
+         }
+@@ -87,6 +95,10 @@ StyledListView {
+     onStateChanged: {
+         if (state === "scheme" || state === "variant")
+             Schemes.reload();
++        else if (state === "clipboard")
++            Clipboard.reload();
++        else if (state === "emoji")
++            Emojis.reload();
+     }
+ 
+     Component.onCompleted: displayText = search.text
+@@ -126,6 +138,20 @@ StyledListView {
+             PropertyChanges {
+                 root.delegate: variantItem
+             }
++        },
++        State {
++            name: "clipboard"
++
++            PropertyChanges {
++                root.delegate: clipboardItem
++            }
++        },
++        State {
++            name: "emoji"
++
++            PropertyChanges {
++                root.delegate: emojiItem
++            }
+         }
+     ]
+ 
+@@ -287,6 +313,22 @@ StyledListView {
+         }
+     }
+ 
++    Component {
++        id: clipboardItem
++
++        ActionItem {
++            list: root
++        }
++    }
++
++    Component {
++        id: emojiItem
++
++        EmojiItem {
++            list: root
++        }
++    }
++
+     Connections {
+         function onTextChanged() {
+             root.syncDisplayText();
+diff --git a/modules/launcher/Content.qml b/modules/launcher/Content.qml
+index f5058f0..bda9e0f 100644
+--- a/modules/launcher/Content.qml
++++ b/modules/launcher/Content.qml
+@@ -59,7 +59,7 @@ Item {
+         topPadding: Math.round((Tokens.padding.medium + Tokens.padding.large) / 2)
+         bottomPadding: Math.round((Tokens.padding.medium + Tokens.padding.large) / 2)
+ 
+-        placeholderText: Tr.tr("Type \"%1\" for commands").arg(GlobalConfig.launcher.actionPrefix)
++        placeholderText: root.screenState.launcherMode === "clipboard" ? Tr.tr("Search clipboard history") : root.screenState.launcherMode === "emoji" ? Tr.tr("Search emoji") : Tr.tr("Type \"%1\" for commands").arg(GlobalConfig.launcher.actionPrefix)
+ 
+         onAccepted: {
+             const currentItem = list.currentList?.currentItem;
+@@ -69,7 +69,7 @@ Item {
+                         Wallpapers.previewColourLock = true;
+                     Wallpapers.setWallpaper(currentItem.modelData.path);
+                     root.screenState.launcher = false;
+-                } else if (text.startsWith(GlobalConfig.launcher.actionPrefix)) {
++                } else if (list.state === "clipboard" || list.state === "emoji" || text.startsWith(GlobalConfig.launcher.actionPrefix)) {
+                     if (text.startsWith(`${GlobalConfig.launcher.actionPrefix}calc `))
+                         currentItem.onClicked();
+                     else
+@@ -111,8 +111,11 @@ Item {
+ 
+         Connections {
+             function onLauncherChanged(): void {
+-                if (!root.screenState.launcher)
++                if (!root.screenState.launcher) {
+                     search.text = "";
++                    // 模式是「这次打开」的，关掉就复位，免得下次 Super 单键也进剪贴板
++                    root.screenState.launcherMode = "";
++                }
+             }
+ 
+             function onSessionChanged(): void {
+diff --git a/modules/launcher/items/EmojiItem.qml b/modules/launcher/items/EmojiItem.qml
+new file mode 100644
+index 0000000..3d0852f
+--- /dev/null
++++ b/modules/launcher/items/EmojiItem.qml
+@@ -0,0 +1,54 @@
++import QtQuick
++import Caelestia.Config
++import qs.components
++import qs.services
++
++// emoji 的一行：字形本身要用普通文本画（ActionItem 的 MaterialIcon 只吃图标字体），
++// 右边跟一串关键词。
++Item {
++    id: root
++
++    required property var modelData
++    required property var list
++
++    implicitHeight: Tokens.sizes.launcher.itemHeight
++
++    anchors.left: parent?.left
++    anchors.right: parent?.right
++
++    StateLayer {
++        radius: Tokens.rounding.large
++        onClicked: root.modelData?.onClicked(root.list)
++    }
++
++    Item {
++        anchors.fill: parent
++        anchors.leftMargin: Tokens.padding.medium
++        anchors.rightMargin: Tokens.padding.medium
++        anchors.margins: Tokens.padding.small
++
++        StyledText {
++            id: glyph
++
++            anchors.verticalCenter: parent.verticalCenter
++
++            text: root.modelData?.glyph ?? ""
++            font: Tokens.font.body.builders.large.build()
++        }
++
++        StyledText {
++            id: keywords
++
++            anchors.left: glyph.right
++            anchors.leftMargin: Tokens.spacing.medium
++            anchors.verticalCenter: glyph.verticalCenter
++
++            text: root.modelData?.name ?? ""
++            font: Tokens.font.body.small
++            color: Colours.palette.m3outline
++
++            elide: Text.ElideRight
++            width: root.width - glyph.width - Tokens.rounding.extraLargeIncreased
++        }
++    }
++}
+diff --git a/modules/launcher/services/Clipboard.qml b/modules/launcher/services/Clipboard.qml
+new file mode 100644
+index 0000000..fd1ed29
+--- /dev/null
++++ b/modules/launcher/services/Clipboard.qml
+@@ -0,0 +1,106 @@
++// 剪贴板历史来源（Super+V 的「外壳内」版本）
++//
++// 数据源与 `caelestia clipboard` 命令完全相同：cliphist 的历史库。
++// 区别只是把列表画在启动器里（跟外壳同一套组件/配色），而不是弹一个 fuzzel 窗口。
++// 输入 `>clipboard ` 也能进同一个状态（走 AppList.stateForText 的前缀逻辑）。
++//
++// cliphist list 每行形如 "<id>\t<base64 预览>"；选中某行时把它原样喂给
++// `cliphist decode`（这才是 cliphist 的官方用法），再把解码结果交给 wl-copy。
++pragma Singleton
++
++import ".."
++import QtQuick
++import Quickshell
++import Quickshell.Io
++import Caelestia.Config
++import qs.utils
++
++Searcher {
++    id: root
++
++    // cliphist list 的原始行
++    property var rawLines: []
++
++    function reload(): void {
++        fetch.running = true;
++    }
++
++    function transformSearch(search: string): string {
++        const prefix = `${GlobalConfig.launcher.actionPrefix}clipboard `;
++        return search.startsWith(prefix) ? search.slice(prefix.length) : search;
++    }
++
++    function selector(item: var): string {
++        return item.name;
++    }
++
++    // cliphist 的预览本身就是可读文本（二进制条目是 "[[ binary data … ]]" 这类标记），
++    // 所以这里只取 tab 之后的部分，**不要**再 base64 解码 —— 它输出的不是 base64，
++    // 解码会把正常文字变成乱码（踩过）。
++    function preview(line: string): string {
++        return line.slice(line.indexOf("\t") + 1).trim();
++    }
++
++    // 二进制条目（图片等）的预览是 "[[ binary data 1 MiB png 2560x1440 ]]" 这种标记，
++    // 从中取出类型 → 复制时要用 wl-copy --type image/png，否则图片会被当成文本贴出去。
++    function mimeOf(line: string): string {
++        const m = /^\[\[ binary data .*? ([a-z0-9]+) \d+x\d+ \]\]$/.exec(preview(line));
++        if (!m)
++            return "";
++        const ext = m[1];
++        return `image/${ext === "jpg" ? "jpeg" : ext}`;
++    }
++
++    list: entries.instances
++    useFuzzy: true
++    keys: ["name"]
++    weights: [1]
++
++    Variants {
++        id: entries
++
++        model: root.rawLines
++        Clip {}
++    }
++
++    component Clip: QtObject {
++        required property var modelData
++
++        readonly property string mime: root.mimeOf(modelData)
++        readonly property string name: root.preview(modelData)
++        readonly property string desc: ""
++        readonly property string icon: mime === "" ? "content_paste" : "image"
++
++        function onClicked(list: AppList): void {
++            list.screenState.launcher = false;
++            // ⚠️ 必须用 `printf | cliphist decode | wl-copy` 这条管道，不能往进程的 stdin 里 write()：
++            // 管道收尾会给下游 EOF，cliphist / wl-copy 才会结束并把选区挂上去；
++            // Quickshell 的 Process 写完 stdin 不会关闭，直接 write 会一直挂着 → 看起来「复制了但粘不出来」。
++            const script = mime === "" ? "printf '%s\\n' \"$1\" | cliphist decode | wl-copy" : `printf '%s\\n' "$1" | cliphist decode | wl-copy --type ${mime}`;
++            Quickshell.execDetached(["sh", "-c", script, "hermes", modelData]);
++        }
++    }
++
++    Process {
++        id: fetch
++
++        command: ["cliphist", "list"]
++        stdout: StdioCollector {
++            onStreamFinished: root.rawLines = text.split("\n").filter(line => line.includes("\t"))
++        }
++    }
++
++    Process {
++        id: copy
++
++        command: ["sh", "-c", "cliphist decode | wl-copy"]
++        stdinEnabled: true
++    }
++
++    LoggingCategory {
++        id: lc
++
++        name: "caelestia.qml.launcher.clipboard"
++        defaultLogLevel: LoggingCategory.Warning
++    }
++}
+diff --git a/modules/launcher/services/Emojis.qml b/modules/launcher/services/Emojis.qml
+new file mode 100644
+index 0000000..3b3eb30
+--- /dev/null
++++ b/modules/launcher/services/Emojis.qml
+@@ -0,0 +1,77 @@
++// emoji 选择器来源（Super+. 的「外壳内」版本）
++//
++// 数据来自 `caelestia emoji`（不带 -p 时它直接把内置的 emojis.txt 打到 stdout，
++// 每行 "<字形> 空格分隔的关键词"），选中后把字形交给 wl-copy —— 与
++// `caelestia emoji -p` 的行为一致，只是列表换成了启动器自己画。
++// 输入 `>emoji ` 也能进同一个状态。
++pragma Singleton
++
++import ".."
++import QtQuick
++import Quickshell
++import Quickshell.Io
++import Caelestia.Config
++import qs.utils
++
++Searcher {
++    id: root
++
++    // `caelestia emoji` 输出的原始行
++    property var rawLines: []
++
++    function reload(): void {
++        if (root.rawLines.length === 0)
++            fetch.running = true;
++    }
++
++    function transformSearch(search: string): string {
++        const prefix = `${GlobalConfig.launcher.actionPrefix}emoji `;
++        return search.startsWith(prefix) ? search.slice(prefix.length) : search;
++    }
++
++    function selector(item: var): string {
++        return item.name;
++    }
++
++    list: entries.instances
++    useFuzzy: true
++    keys: ["name"]
++    weights: [1]
++
++    Variants {
++        id: entries
++
++        model: root.rawLines
++        Emoji {}
++    }
++
++    component Emoji: QtObject {
++        required property var modelData
++
++        readonly property string glyph: modelData.split(" ")[0] ?? ""
++        readonly property string name: modelData.slice(glyph.length).trim()
++        readonly property string desc: ""
++
++        function onClicked(list: AppList): void {
++            list.screenState.launcher = false;
++            copy.running = true;
++            copy.write(glyph);
++        }
++    }
++
++    Process {
++        id: fetch
++
++        command: ["caelestia", "emoji"]
++        stdout: StdioCollector {
++            onStreamFinished: root.rawLines = text.split("\n").filter(line => line.trim() !== "")
++        }
++    }
++
++    Process {
++        id: copy
++
++        command: ["wl-copy"]
++        stdinEnabled: true
++    }
++}

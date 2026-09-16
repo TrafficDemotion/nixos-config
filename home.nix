@@ -62,6 +62,10 @@
             ./patches/caelestia/0012-ui-sounds-launcher-page.patch
             ./patches/caelestia/0007-lock-minimal-fade.patch
             ./patches/caelestia/0008-lock-no-password-hint.patch
+            #   0013 启动器里内置剪贴板 / emoji 列表：Super+V / Super+. 不再弹 fuzzel
+            #        窗口，而是以 clipboard / emoji 模式打开启动器（数据仍来自
+            #        cliphist 与 `caelestia emoji`）。
+            ./patches/caelestia/0013-launcher-clipboard-emoji.patch
           ];
       });
 
@@ -719,6 +723,12 @@
     ddcutil # 外接显示器亮度（DDC/CI）：Caelestia 亮度条/亮度键的后端；
             # 缺了它外壳会静默回退到 brightnessctl，而本机根本没有背光设备
 
+    # 终端屏保（drift，https://github.com/phlx0/drift）：空闲若干秒后把终端变成
+    # 动态壁纸，按任意键回到提示符。包定义在 ./pkgs/drift.nix —— 上游 flake 的
+    # vendorHash 是占位符（作者自己让人 nix build 一次再回填），且钉了 unstable 的
+    # nixpkgs，所以像 sunshine 那样 vendored 一份走我们自己的 nixpkgs。
+    (pkgs.callPackage ./pkgs/drift.nix { })
+
     # 视频 → 彩色 ASCII 动效（anifetch，包定义见 flake.nix 里的同名输入）。
     # 它运行时靠 PATH 找 chafa 渲帧、ffmpeg/ffprobe 抽帧、ffplay 放音，fastfetch 本机已有；
     # chafa 不在 Nix 的传递依赖里（只进了闭包、没进 PATH），必须显式装上，
@@ -796,6 +806,13 @@
       fi
       source ${pkgs.zsh-powerlevel10k}/share/zsh-powerlevel10k/powerlevel10k.zsh-theme
       [[ -r $HOME/.p10k.zsh ]] && source $HOME/.p10k.zsh
+
+      # drift（终端屏保）：空闲 DRIFT_TIMEOUT 秒后自动开始播放，按任意键回到提示符。
+      # 不想要就删掉这段（或直接 drift 手跑）。场景/主题：drift --showcase
+      if command -v drift >/dev/null 2>&1; then
+        export DRIFT_TIMEOUT=180
+        eval "$(drift shell-init zsh)"
+      fi
     '';
   };
 
