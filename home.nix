@@ -15,7 +15,13 @@
   # Super+V 会弹出一个空列表（看起来像坏了）。这个模块就是官方那个 watcher
   # （wl-paste --watch cliphist store，另有 ... --type image 的那条），
   # 由 home-manager 生成用户服务，不需要自己写脚本。
-  services.cliphist.enable = true;
+  # extraOptions 默认只带 -max-dedupe-search 10，所以从启动器里点「较旧」的条目时，
+  # 复制回去的内容会被当成新条目再存一条（看着像「多出一条重复」）—— 调到 500（= max-items）
+  # 让整个历史范围都去重。
+  services.cliphist = {
+    enable = true;
+    extraOptions = [ "-max-dedupe-search" "500" "-max-items" "500" ];
+  };
 
   # ═══════════════════ 桌面外壳：Caelestia ═══════════════════
   # 状态栏 / 通知 / 启动器 / 仪表盘 / 锁屏 / 截图 / 剪贴板 全由它提供，

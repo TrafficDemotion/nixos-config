@@ -256,10 +256,10 @@ index 0000000..3d0852f
 +}
 diff --git a/modules/launcher/services/Clipboard.qml b/modules/launcher/services/Clipboard.qml
 new file mode 100644
-index 0000000..fd1ed29
+index 0000000..c8abf49
 --- /dev/null
 +++ b/modules/launcher/services/Clipboard.qml
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,135 @@
 +// 剪贴板历史来源（Super+V 的「外壳内」版本）
 +//
 +// 数据源与 `caelestia clipboard` 命令完全相同：cliphist 的历史库。
@@ -335,12 +335,48 @@ index 0000000..fd1ed29
 +
 +        function onClicked(list: AppList): void {
 +            list.screenState.launcher = false;
-+            // ⚠️ 必须用 `printf | cliphist decode | wl-copy` 这条管道，不能往进程的 stdin 里 write()：
-+            // 管道收尾会给下游 EOF，cliphist / wl-copy 才会结束并把选区挂上去；
-+            // Quickshell 的 Process 写完 stdin 不会关闭，直接 write 会一直挂着 → 看起来「复制了但粘不出来」。
-+            const script = mime === "" ? "printf '%s\\n' \"$1\" | cliphist decode | wl-copy" : `printf '%s\\n' "$1" | cliphist decode | wl-copy --type ${mime}`;
-+            Quickshell.execDetached(["sh", "-c", script, "hermes", modelData]);
++            // ⚠️ 三条坑叠在这一个函数里（都踩过）：
++            // 1) 不能往 Process 的 stdin 里 write()：Quickshell 写完不关 stdin，cliphist/wl-copy
++            //    会一直等 EOF，选区根本挂不上 —— 必须用管道收尾。
++            // 2) **不能在「启动器关闭的同一帧」挂选区**：启动器是带键盘抓取
++            //    （HyprlandFocusGrab）的图层，关闭瞬间挂上去的剪贴板，应用（kitty /
++            //    LibreWolf）Ctrl+V 读不到内容；隔一会儿再挂就正常（自己 Ctrl+C 粘贴一直正常，
++            //    因为那没有启动器参与）。所以这里用 Timer 延后 400ms 再复制。
++            // 3) 由**外壳** fork 出来的 wl-copy 也不保险（caelestia.service 随重启会带走选区），
++            //    所以真正挂选区那步交给 Hyprland 起；本机 Hyprland 是 **Lua 配置**，
++            //    `hyprctl dispatch exec …` 旧语法会被静默拒掉，必须 `hl.dsp.exec_cmd(...)`。
++            pending.payload = modelData;
++            pending.mime = mime;
++            pending.restart();
 +        }
++    }
++
++    // 延后 400ms 再挂选区（原因见上面 Clip.onClicked 的注释 2）
++    Timer {
++        id: pending
++
++        property string payload: ""
++        property string mime: ""
++
++        interval: 400
++        onTriggered: root.copyToClipboard(payload, mime)
++    }
++
++    // 真正的复制动作：外壳只往 /tmp 写「选中的行」+ 一个内容固定的 helper，
++    // 挂选区那步让 Hyprland 起（见 onClicked 注释 3）。
++    function copyToClipboard(line: string, mime: string): void {
++        const tmp = `/tmp/caelestia-clip-${Date.now()}`;
++        const helper = `${tmp}.sh`;
++        const type = mime === "" ? "" : ` --type ${mime}`;
++        const cmd = [
++            `printf '%s\\n' "$1" > ${tmp}`,
++            `printf '%s\\n' 'i=0; while [ ! -e ${tmp} ] && [ $i -lt 250 ]; do i=$((i+1)); sleep 0.02; done' 'cliphist decode < ${tmp} | wl-copy${type}' 'rm -f ${tmp} ${helper}' > ${helper}`,
++            // SIG 优先取外壳环境里的（Hyprland 注入的，一定是活的）；$XDG_RUNTIME_DIR/hypr/ 下
++            // 会残留历史会话的目录，head -1 可能挑到过期的那个（连不上、静默失败）。
++            `SIG=\${HYPRLAND_INSTANCE_SIGNATURE:-$(ls -dt "$XDG_RUNTIME_DIR"/hypr/*/ 2>/dev/null | head -1 | xargs -r basename)}`,
++            `HYPRLAND_INSTANCE_SIGNATURE=$SIG hyprctl dispatch "hl.dsp.exec_cmd(\\"sh ${helper}\\")"`
++        ].join("\n");
++        Quickshell.execDetached(["sh", "-c", cmd, "hermes", line]);
 +    }
 +
 +    Process {
@@ -352,13 +388,6 @@ index 0000000..fd1ed29
 +        }
 +    }
 +
-+    Process {
-+        id: copy
-+
-+        command: ["sh", "-c", "cliphist decode | wl-copy"]
-+        stdinEnabled: true
-+    }
-+
 +    LoggingCategory {
 +        id: lc
 +
@@ -368,10 +397,10 @@ index 0000000..fd1ed29
 +}
 diff --git a/modules/launcher/services/Emojis.qml b/modules/launcher/services/Emojis.qml
 new file mode 100644
-index 0000000..3b3eb30
+index 0000000..9455ad3
 --- /dev/null
 +++ b/modules/launcher/services/Emojis.qml
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,96 @@
 +// emoji 选择器来源（Super+. 的「外壳内」版本）
 +//
 +// 数据来自 `caelestia emoji`（不带 -p 时它直接把内置的 emojis.txt 打到 stdout，
@@ -428,9 +457,35 @@ index 0000000..3b3eb30
 +
 +        function onClicked(list: AppList): void {
 +            list.screenState.launcher = false;
-+            copy.running = true;
-+            copy.write(glyph);
++            // 与 Clipboard.qml 同样的坑：不能 write() stdin、不能在启动器关闭的同一帧挂选区
++            // （要延后）、不能由外壳 fork wl-copy（交给 Hyprland，且本机是 Lua 配置，
++            // 必须 hl.dsp.exec_cmd(...)）。
++            pending.payload = glyph;
++            pending.restart();
 +        }
++    }
++
++    // 延后 400ms 再挂选区（原因见 Clipboard.qml 的注释）
++    Timer {
++        id: pending
++
++        property string payload: ""
++
++        interval: 400
++        onTriggered: root.copyEmoji(payload)
++    }
++
++    // 外壳只写文件，挂选区交给 Hyprland（见 Clipboard.qml 注释 3）
++    function copyEmoji(glyph: string): void {
++        const tmp = `/tmp/caelestia-emoji-${Date.now()}`;
++        const helper = `${tmp}.sh`;
++        const cmd = [
++            `printf '%s' "$1" > ${tmp}`,
++            `printf '%s\\n' 'i=0; while [ ! -e ${tmp} ] && [ $i -lt 250 ]; do i=$((i+1)); sleep 0.02; done' 'wl-copy < ${tmp}' 'rm -f ${tmp} ${helper}' > ${helper}`,
++            `SIG=\${HYPRLAND_INSTANCE_SIGNATURE:-$(ls -dt "$XDG_RUNTIME_DIR"/hypr/*/ 2>/dev/null | head -1 | xargs -r basename)}`,
++            `HYPRLAND_INSTANCE_SIGNATURE=$SIG hyprctl dispatch "hl.dsp.exec_cmd(\\"sh ${helper}\\")"`
++        ].join("\n");
++        Quickshell.execDetached(["sh", "-c", cmd, "hermes", glyph]);
 +    }
 +
 +    Process {
@@ -440,12 +495,5 @@ index 0000000..3b3eb30
 +        stdout: StdioCollector {
 +            onStreamFinished: root.rawLines = text.split("\n").filter(line => line.trim() !== "")
 +        }
-+    }
-+
-+    Process {
-+        id: copy
-+
-+        command: ["wl-copy"]
-+        stdinEnabled: true
 +    }
 +}
