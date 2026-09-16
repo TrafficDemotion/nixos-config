@@ -396,6 +396,9 @@
       plenary-nvim # telescope 的依赖
       telescope-nvim # 查找：文件 / 全文（用 PATH 里的 fd、ripgrep）
       which-key-nvim # 按 <leader> 后弹出可用快捷键
+      # 缩进对齐线（上游 lukas-reineke/indent-blankline.nvim，v3，模块名 ibl）；
+      # 开关与颜色写在 nvim/init.lua 的 require("ibl").setup 与 apply_custom_hl 两处。
+      indent-blankline-nvim
       # Treesitter 的解析器（语法高亮/结构化解析）。nvim 0.12 自带
       # c/lua/vim/vimdoc/query/markdown 的解析器，这里补常用语言。
       (nvim-treesitter.withPlugins (

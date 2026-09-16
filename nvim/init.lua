@@ -87,6 +87,38 @@ local function load_dyn_palette()
   return nil
 end
 
+-- ── 区块边界 / 缩进线：在主题之上再盖几笔 ─────────────────────────────────
+-- 这里管两类「用符号划出区块」的东西。两者都必须【在 colorscheme 之后】设置：
+-- :colorscheme 内部会 hi clear，之前设过的自定义组会被清掉，所以下面这段由
+-- apply_theme() 调用（换壁纸时也会重跑一遍，颜色跟着新调色板走）。
+--
+-- ① 窗口分隔线（左侧 neo-tree 栏与编辑区之间那条竖线）
+--    nvim 0.11+ 的 fillchars 默认值本身就是制表符：vert │ / horiz ─ /
+--    vertleft ┤ / vertright ├ / verthoriz ┼（后三种只在 laststatus=3 —— 本配置就是
+--    —— 时才用得到），所以【符号不用自己设】，要改的是颜色：catppuccin 把
+--    WinSeparator 设成 crust（本机 = #000000 纯黑），线其实一直在画，只是黑底上看不见。
+--    下面统一改成 surface2（比背景亮一档的中间灰），在 base 底色和 mantle 侧栏底色上都看得清。
+--    想更明显换 overlay0 / overlay1；想更淡换 surface1；想要更粗的框就在 fillchars 里
+--    把 vert 换成 ┃（写法见 :h 'fillchars'，0.11 起才有 vertleft/vertright/verthoriz）。
+--
+-- ② 缩进对齐线（indent-blankline，模块名 ibl）的两档颜色
+--    catppuccin 自带的 ibl 整合（integrations.indent_blankline）把 IblIndent 写死成
+--    surface0（#1a1e21，几乎与背景同色）、IblScope 写死成 text（很亮），两档都不合适；
+--    这里用和分隔线同一档的 surface2 + 稍亮一点的 overlay1（光标所在代码块那几条）。
+local function apply_custom_hl(pal)
+  local set = function(group, key)
+    if pal[key] then
+      vim.api.nvim_set_hl(0, group, { fg = pal[key] })
+    end
+  end
+  set("WinSeparator", "surface2") -- 竖直边界线（以及 laststatus=3 下的 ┤├┼）
+  set("MsgSeparator", "surface2") -- 命令行消息分隔条（默认 link 到 WinSeparator）
+  set("NeoTreeWinSeparator", "surface2") -- neo-tree 侧栏自己那条边界线
+  set("NeoTreeVertSplit", "surface2")
+  set("IblIndent", "surface2") -- 缩进对齐线
+  set("IblScope", "overlay1") -- 当前代码块的那几条
+end
+
 local function apply_theme()
   local dyn = load_dyn_palette()
   local flavour = (dyn and dyn.mode == "light") and "latte" or "mocha"
@@ -103,6 +135,9 @@ local function apply_theme()
   -- 显式点名 flavour：setup() 可以重复调用（它每次都用新的 user_conf 覆盖 options 并按内容哈希决定要不要重编），
   -- 所以换壁纸后直接重跑这一段就能就地换色。
   vim.cmd.colorscheme("catppuccin-" .. flavour)
+  -- get_palette() 会带上 setup() 收到的 color_overrides（= 壁纸取色的那套），
+  -- 所以这里拿到的就是当前生效的调色板。
+  apply_custom_hl(require("catppuccin.palettes").get_palette(flavour))
 end
 
 apply_theme()
@@ -281,6 +316,25 @@ require("which-key").setup({ preset = "classic", delay = 300 })
 require("which-key").add({
   { "<leader>b", group = "Buffer" },
   { "<leader>f", group = "Find" },
+})
+
+-- ── 缩进对齐线：indent-blankline（模块名 ibl，v3）──────────────────────────
+-- 插件由 Nix 提供（home.nix 的 programs.neovim.plugins 里的 indent-blankline-nvim），
+-- 这里只写配置；颜色不在这里 —— 见上面 apply_custom_hl 的 IblIndent / IblScope
+-- （要用跟壁纸走的那套调色板，所以跟主题一起重设）。
+-- 上游默认（v3.9.1）：indent.char = "▎"（左侧 1/8 方块）、scope 打开且带首尾标记；
+-- 这里改成细实线 "│"（与窗口分隔线用同一个符号，「用符号划区块」更统一），
+-- scope 保留但去掉首尾标记 —— 缩进线 + 分隔线本身就够了，不需要额外装饰。
+-- 渲染走 extmark 的 virt_text（ibl/init.lua: nvim_buf_set_extmark + virt_text_pos="overlay"），
+-- 与 list/listchars 无关，所以不会把 listchars 那套制表符视觉开关带进来。
+require("ibl").setup({
+  indent = { char = "│" },
+  scope = { enabled = true, show_start = false, show_end = false },
+  -- 这些窗口里画缩进线只是噪声（列表/弹层/终端并不表示代码缩进）；
+  -- buftypes（terminal/nofile/prompt/quickfix）上游默认已排除，这里只补 filetypes。
+  exclude = {
+    filetypes = { "neo-tree", "wk", "help", "lazy", "mason", "telescope", "NvimTree" },
+  },
 })
 
 -- ── 常用快捷键 ────────────────────────────────────────────────────────────
