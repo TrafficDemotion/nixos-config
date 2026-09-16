@@ -112,6 +112,8 @@ local function apply_custom_hl(pal)
     end
   end
   set("WinSeparator", "surface2") -- 竖直边界线（以及 laststatus=3 下的 ┤├┼）
+  set("FloatBorder", "surface2") -- 浮窗边框（含左侧的 neo-tree 浮窗）
+  set("FloatTitle", "overlay0") -- 浮窗边框上那个标题（neo-tree 浮窗顶部那串字）
   set("MsgSeparator", "surface2") -- 命令行消息分隔条（默认 link 到 WinSeparator）
   set("NeoTreeWinSeparator", "surface2") -- neo-tree 侧栏自己那条边界线
   set("NeoTreeVertSplit", "surface2")
@@ -235,9 +237,15 @@ map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "Close buffer" })
 map("n", "<leader>bo", "<cmd>BufferLineCloseOthers<cr>", { desc = "Close other buffers" })
 
 -- ── 文件浏览器：neo-tree（左侧树）─────────────────────────────────────────
+-- 左侧栏的形态：true = 浮窗（自带四边框 + 标题，像 btop 的面板）/ false = 占位的侧栏
+local tree_float = true
+
 require("neo-tree").setup({
   close_if_last_window = true,
-  popup_border_style = "rounded",
+  -- 浮窗边框：空串 = 跟随 nvim 0.11+ 的 'winborder'（本文件顶部设的 "rounded"；
+  -- 取值 single/rounded/double/bold/solid/shadow），这样跟补全菜单、telescope 那些浮窗
+  -- 共用同一个设置。neo-tree 的默认值是 "NC"（不画边框），所以要显式写空串。
+  popup_border_style = "",
   enable_git_status = true,
   filesystem = {
     filtered_items = { hide_dotfiles = false, hide_gitignored = false },
@@ -246,7 +254,19 @@ require("neo-tree").setup({
     -- 它在被劫持的目录 buffer 上会留下 E216（无害但脏），改用下面的 VimEnter 按需打开。
     hijack_netrw_behavior = "disabled",
   },
-  window = { width = 34 },
+  window = {
+    -- 左侧栏做成【浮窗】：不占位、盖在代码上，四边都是浮窗边框（圆角 —— 边框样式来自
+    -- 上面的 popup_border_style = "rounded"，取值就是 nvim 浮窗那套 border：
+    -- single/rounded/double/solid/shadow）。这是 nvim 里唯一能画出完整四边框的地方。
+    -- 想退回占位的侧栏：position = "left"（下面的 popup 段随即失效）。
+    position = tree_float and "float" or "left",
+    width = 34, -- 只在 position = "left"/"right" 时生效
+    popup = {
+      size = { width = 44, height = "90%" },
+      -- 百分比 = (可用空间 - 浮窗尺寸) 的占比："0%" 贴左上 / "50%" 居中 / "100%" 贴右下
+      position = { row = "50%", col = "0%" }, -- 垂直居中、水平贴左边缘
+    },
+  },
   default_component_configs = {
     indent = { with_expanders = true },
   },
@@ -288,7 +308,9 @@ vim.api.nvim_create_autocmd("VimEnter", {
       end
     end
 
-    vim.cmd("Neotree show dir=" .. vim.fn.fnameescape(dir))
+    -- 浮窗形态下 `Neotree show` 不开窗（实测），要用 `Neotree float`
+    local verb = tree_float and "float" or "show"
+    vim.cmd(("Neotree %s dir=%s"):format(verb, vim.fn.fnameescape(dir)))
   end,
 })
 
