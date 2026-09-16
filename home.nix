@@ -428,24 +428,26 @@
     enableZshIntegration = false;
     settings.mgr.show_hidden = true;
 
-    # 键位（2026-09-16 用户要求）：
-    #   N → 在当前目录打开 neovide      K → 在当前目录打开 kitty
-    #   h / j / k / l → 关掉（绑成 noop：yazi 的“空动作”，内部遇到它会直接把这条 chord
-    #                        过滤掉，见 yazi-config/src/keymap/chord.rs 的 noop()），
-    #                        方向键不受影响，导航照旧。
+    # 键位（2026-09-16 用户要求，先大写 N/K → 当日改成小写 n/k）：
+    #   n → 在当前目录打开 neovide      k → 在当前目录打开 kitty
+    #   h / j / l → 关掉（绑成 noop：yazi 的“空动作”，内部遇到它会直接把这条 chord
+    #                    过滤掉，见 yazi-config/src/keymap/chord.rs 的 noop()），
+    #                    方向键不受影响，导航照旧。
+    # 代价（prepend 会顶掉同键的默认绑定）：小写 n 原本是“跳到下一个搜索结果”、
+    # k 原本是“上移一行”——前者没了（搜索后仍可用方向键/`N`… 注意 `N` 现在没绑），
+    # 后者本来就被上面的 noop 关掉了。要保留“下一个搜索结果”就换个键或改用 / 里的 <CR>。
     # 为什么不用自己拼路径：yazi 的 shell 命令跑在【当前标签页的 cwd】里
     # （yazi-actor/src/mgr/shell.rs: `let cwd = form.cwd.unwrap_or_else(|| cx.cwd().clone())`），
     # 所以 `neovide .` / `kitty` 天然就是当前目录。
     # --orphan = 脱离 yazi 的任务调度，yazi 退出后窗口不会被连带杀掉。
-    # 注意：prepend_keymap 优先级高于默认键位，所以 N 覆盖了默认的 “find previous”。
     keymap.mgr.prepend_keymap = [
       {
-        on = "N";
+        on = "n";
         run = "shell --orphan 'neovide .'";
         desc = "Open Neovide here";
       }
       {
-        on = "K";
+        on = "k";
         run = "shell --orphan 'kitty'";
         desc = "Open kitty here";
       }
@@ -455,10 +457,6 @@
       }
       {
         on = "j";
-        run = "noop";
-      }
-      {
-        on = "k";
         run = "noop";
       }
       {
