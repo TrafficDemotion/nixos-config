@@ -215,11 +215,16 @@ local mainMod = "SUPER"
 
 -- Caelestia：面板 / 会话 / 通知
 hl.bind("SUPER + SUPER_L", hl.dsp.global("caelestia:launcher"), { release = true }) -- 单按 Win 键 = 启动器
-hl.bind(mainMod .. " + K", hl.dsp.global("caelestia:showall")) -- 仪表盘（显示所有面板）
 hl.bind(mainMod .. " + N", hl.dsp.global("caelestia:sidebar")) -- 侧边栏
 hl.bind("CTRL + ALT + Delete", hl.dsp.global("caelestia:session")) -- 电源菜单
-hl.bind(mainMod .. " + L", hl.dsp.global("caelestia:lock")) -- 锁屏（Caelestia 内置，背景已改壁纸；解锁没有事件可挂）
 hl.bind("CTRL + ALT + C", hl.dsp.global("caelestia:clearNotifs"), { locked = true })
+
+-- vim 风的字母键位（h/j/k/l）全部停用（2026-09-16 用户要求）。
+-- 现状：h、j 本来就没有绑定；k（仪表盘）与 l（锁屏）这两条按他要求一并去掉。
+-- 仪表盘、锁屏都还有鼠标入口：竖栏右下的电源图标 / 会话菜单、单按 Win 的启动器。
+-- 恢复办法：把下面两行前面的 `-- ` 去掉。
+-- hl.bind(mainMod .. " + K", hl.dsp.global("caelestia:showall")) -- 仪表盘（显示所有面板）
+-- hl.bind(mainMod .. " + L", hl.dsp.global("caelestia:lock")) -- 锁屏（Caelestia 内置，背景已改壁纸；解锁没有事件可挂）
 
 -- 应用
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal))
@@ -233,17 +238,22 @@ hl.bind(mainMod .. " + Q", hl.dsp.window.close())
 hl.bind(mainMod .. " + F", hl.dsp.window.fullscreen({ action = "toggle" }))
 hl.bind(mainMod .. " + ALT + F", hl.dsp.window.fullscreen({ mode = "maximized" }))
 hl.bind(mainMod .. " + P", hl.dsp.window.pin())
-hl.bind(mainMod .. " + ALT + Space", hl.dsp.window.float({ action = "toggle" }))
+-- 平铺/浮动切换（SUPER + ALT + Space）按用户要求停用（2026-09-16）。
+-- 本机所有窗口默认就是浮动（见文件末尾的 float-all 规则），这条只会把窗口切成平铺。
+-- 恢复办法：把下一行前面的 `-- ` 去掉。
+-- hl.bind(mainMod .. " + ALT + Space", hl.dsp.window.float({ action = "toggle" }))
 hl.bind("ALT + TAB", hl.dsp.window.cycle_next(), { repeating = true })
 hl.bind("SHIFT + ALT + TAB", hl.dsp.window.cycle_next({ next = false }), { repeating = true })
 
--- 缩放窗口
-hl.bind(mainMod .. " + Equal", hl.dsp.window.resize({ x = 40, y = 0, relative = true }), { repeating = true })
-hl.bind(mainMod .. " + Minus", hl.dsp.window.resize({ x = -40, y = 0, relative = true }), { repeating = true })
--- `SUPER + +`（= SUPER + SHIFT + Equal）按用户要求停用（2026-09-16，他按这个组合时窗口被拉高了）。
--- 恢复办法：把下一行前面的 `-- ` 去掉。
+-- 缩放窗口：整组停用（2026-09-16 用户要求「SUPER + 加号/减号都删掉」）。
+-- 起因：09-16 早些时候只停用了 SUPER + SHIFT + Equal（他按到时窗口被拉高了），
+-- 这次把 Equal / Minus / SHIFT + Minus 一并停用 —— 窗口大小只靠鼠标
+-- （SUPER 或 ALT + 右键拖动）。
+-- 恢复办法：把下面四行前面的 `-- ` 去掉。
+-- hl.bind(mainMod .. " + Equal", hl.dsp.window.resize({ x = 40, y = 0, relative = true }), { repeating = true })
+-- hl.bind(mainMod .. " + Minus", hl.dsp.window.resize({ x = -40, y = 0, relative = true }), { repeating = true })
 -- hl.bind(mainMod .. " + SHIFT + Equal", hl.dsp.window.resize({ x = 0, y = 40, relative = true }), { repeating = true })
-hl.bind(mainMod .. " + SHIFT + Minus", hl.dsp.window.resize({ x = 0, y = -40, relative = true }), { repeating = true })
+-- hl.bind(mainMod .. " + SHIFT + Minus", hl.dsp.window.resize({ x = 0, y = -40, relative = true }), { repeating = true })
 
 -- 焦点：SUPER + 方向键
 hl.bind(mainMod .. " + left", hl.dsp.focus({ direction = "left" }))

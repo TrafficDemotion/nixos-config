@@ -364,7 +364,7 @@ map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "Clear search highlight" })
 map({ "n", "i", "v" }, "<C-s>", "<cmd>w<cr>", { desc = "Save" })
 map("n", "<leader>w", "<cmd>w<cr>", { desc = "Save" })
 map("n", "<leader>q", "<cmd>q<cr>", { desc = "Quit" })
--- 窗口之间跳转 / 调大小（Ctrl 系；SUPER+hjkl 归 Hyprland 管）
+-- 窗口之间跳转 / 调大小（Ctrl 系；Hyprland 侧的字母 hjkl 键位已于 2026-09-16 全部取消）
 map("n", "<C-h>", "<C-w>h", { desc = "Left window" })
 map("n", "<C-j>", "<C-w>j", { desc = "Down window" })
 map("n", "<C-k>", "<C-w>k", { desc = "Up window" })
