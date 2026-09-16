@@ -337,3 +337,14 @@ hl.window_rule({
   match = { class = "^(pavucontrol|nm-connection-editor|blueman-manager)$" },
   float = true,
 })
+
+-- neovide 的窗口尺寸交给合成器管（2026-09-16）。原因：neovide 0.16.2 自己那两条路在这台机上都不行
+--   * `--size` / config.toml 的 size：只在窗口映射前 request_inner_size 一次，Wayland 下被忽略
+--     （实测 --size 400x300 照样开成 800x600，1600x1000 也一样）；
+--   * `--grid`：参数组有冲突 bug，一用就报 "cannot be used with '--size'" 直接退出。
+-- 所以尺寸写在 Hyprland 规则里；位置由 Hyprland 自己居中，不用额外给。
+hl.window_rule({
+  name = "neovide-size",
+  match = { class = "^neovide$" },
+  size = "1600 1000",
+})

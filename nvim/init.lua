@@ -124,6 +124,24 @@ do
   end
 end
 
+-- ── Neovide（GUI 前端）──────────────────────────────────────────────────────
+-- 只在 Neovide 里生效，终端里的 nvim 完全不受影响。
+-- 分工：字体族 / 字号在下面这段里写（neovide 官方口径是 guifont）；窗口大小写在 Hyprland
+-- 的窗口规则里（neovide 自己的 size/grid 在 Wayland 上不生效，见 hyprland.lua 的注释）；
+-- ~/.config/neovide/config.toml（home.nix 的 programs.neovide.settings）只放首屏字体值。
+if vim.g.neovide then
+  -- 字体：neovide 文档（Configuration → Font）里“由 nvim 选项控制”的就是这一项 guifont ——
+  -- 所以这里显式写一份；home.nix 的 programs.neovide.settings.font 里那份是 nvim 连上之前
+  -- 的首屏值，两边保持一致（改字号记得一起改）。:h12 = 12pt。
+  vim.o.guifont = "JetBrainsMono Nerd Font:h12"
+  -- 整体缩放（0.10.2 起支持）：不改变上面那份字体定义，只是把整个 GUI 乘一个系数。
+  -- 屏幕是 2560x1440 / Hyprland scale 1.00，所以保持 1.0；觉得整体偏大偏小就 0.9 / 1.1，
+  -- 运行时改这一行再 :source 本文件即生效（不用重启 neovide）。
+  -- 窗口大小不在这里：neovide 自己的 --size/grid 在 Wayland 上不吃，尺寸写在
+  -- ~/.config/hypr/hyprland.lua 的窗口规则 `neovide-size`（见那段的注释）。
+  vim.g.neovide_scale_factor = 1.0
+end
+
 -- ── Treesitter ────────────────────────────────────────────────────────────
 -- nvim 0.12 自带 c/lua/vim/vimdoc/query/markdown 的解析器与高亮；
 -- 其它语言（nix/python/go/ts/...）的解析器由 Nix 的 nvim-treesitter.withPlugins 提供。

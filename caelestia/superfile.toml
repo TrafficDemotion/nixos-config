@@ -1,0 +1,91 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# superfile 的配色 —— 这份是【模板】，由 Caelestia 用当前壁纸现算的配色渲染
+#
+#   模板源文件：/etc/nixos/caelestia/superfile.toml（本文件，声明式；改它要 nixos-rebuild）
+#   模板副本：  ~/.config/caelestia/templates/superfile.toml（home.nix 的 xdg.configFile 生成）
+#   渲染结果：  ~/.local/state/caelestia/theme/superfile.toml
+#   取用方：    ~/.config/superfile/theme/caelestia.toml（一条指向上面那个文件的软链，
+#              由 home.nix 的 mkOutOfStoreSymlink 声明）
+#              + ~/.config/superfile/config.toml 里的 theme = 'caelestia'
+#
+# 机制：Caelestia CLI 的用户模板口子（utils/theme.py 的 apply_user_templates）—— 每次
+# 换壁纸 / 换配色（caelestia wallpaper -f|-r、scheme set，GUI 里点也一样）都会把
+# ~/.config/caelestia/templates/ 下的每个文件用当前配色重渲染到
+# ~/.local/state/caelestia/theme/<同名文件>。
+# 占位符：两层花括号包住「颜色名.属性」（属性可用 hex / rgb / hsl / red 等，颜色名与
+# ~/.local/state/caelestia/scheme.json 的键一一对应，别自己发明名字）。hex 属性不带 #，
+# 所以下面每行都自己补了 #（superfile 要 #RRGGBB）。另有一个 mode 占位符换成 dark / light。
+# ⚠️ 渲染是纯文本替换，连【注释里的】占位符也会被换掉，说明里别写真的花括号。
+#
+# 为什么这么挑颜色（与 kitty / nvim 一套逻辑）：
+#   * 背景取 M3 的 surfaceContainer 一档（dark ≈ #1f201f），不用 surface（≈ #131413，
+#     接近纯黑、跟壁纸明暗无关）；侧栏/底栏用 surfaceContainerLow，弹窗用
+#     surfaceContainerHigh —— 两套模式下都是「离底色远一档」，不会在 light 下变成深色块。
+#   * 选中项 / 按钮用 secondaryContainer、primaryContainer、errorContainer 这类【容器色】
+#     配 onXxxContainer：M3 的 secondary/primary 在 dark 是浅色、light 是深色，直接当底色
+#     会在浅色主题里变成深色块。
+#   * 三个活动边框用 primary / secondary / tertiary 区分「现在聚焦哪一块」。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 代码预览的语法高亮 = chroma 的内置样式【名字】，不是颜色。模板没法按 mode 分支，而
+# chroma 的样式都只针对一种底色，所以这里固定用 dark 系的 catppuccin-mocha（与 nvim 默认
+# flavour 一致）。哪天常用浅色壁纸、觉得代码预览发灰，把这行换成 "catppuccin-latte" 再 rebuild。
+code_syntax_highlight = "catppuccin-mocha"
+
+# ========= Border（非活动） =========
+file_panel_border = "#{{ outlineVariant.hex }}"
+sidebar_border = "#{{ outlineVariant.hex }}"
+footer_border = "#{{ outlineVariant.hex }}"
+
+# ========= Border Active（聚焦的那一块） =========
+file_panel_border_active = "#{{ primary.hex }}"
+sidebar_border_active = "#{{ secondary.hex }}"
+footer_border_active = "#{{ tertiary.hex }}"
+modal_border_active = "#{{ primary.hex }}"
+
+# ========= Background =========
+full_screen_bg = "#{{ surfaceContainer.hex }}"
+file_panel_bg = "#{{ surfaceContainer.hex }}"
+sidebar_bg = "#{{ surfaceContainerLow.hex }}"
+footer_bg = "#{{ surfaceContainerLow.hex }}"
+modal_bg = "#{{ surfaceContainerHigh.hex }}"
+
+# ========= Foreground =========
+full_screen_fg = "#{{ onSurface.hex }}"
+file_panel_fg = "#{{ onSurface.hex }}"
+sidebar_fg = "#{{ onSurface.hex }}"
+footer_fg = "#{{ onSurface.hex }}"
+modal_fg = "#{{ onSurface.hex }}"
+
+# ========= Special Color =========
+cursor = "#{{ secondary.hex }}"
+correct = "#{{ success.hex }}"
+error = "#{{ error.hex }}"
+hint = "#{{ term4.hex }}"
+cancel = "#{{ term1.hex }}"
+# 渐变只支持两个颜色
+gradient_color = ["#{{ primary.hex }}", "#{{ tertiary.hex }}"]
+directory_icon_color = "#{{ primary.hex }}"
+
+# ========= File Panel Special Items =========
+file_panel_top_directory_icon = "#{{ success.hex }}"
+file_panel_top_path = "#{{ primary.hex }}"
+file_panel_item_selected_fg = "#{{ onSecondaryContainer.hex }}"
+file_panel_item_selected_bg = "#{{ secondaryContainer.hex }}"
+
+# ========= Sidebar Special Items =========
+sidebar_title = "#{{ primary.hex }}"
+sidebar_item_selected_fg = "#{{ onSecondaryContainer.hex }}"
+sidebar_item_selected_bg = "#{{ secondaryContainer.hex }}"
+sidebar_divider = "#{{ outlineVariant.hex }}"
+
+# ========= Modal Special Items =========
+modal_cancel_fg = "#{{ onErrorContainer.hex }}"
+modal_cancel_bg = "#{{ errorContainer.hex }}"
+
+modal_confirm_fg = "#{{ onPrimaryContainer.hex }}"
+modal_confirm_bg = "#{{ primaryContainer.hex }}"
+
+# ========= Help Menu =========
+help_menu_hotkey = "#{{ tertiary.hex }}"
+help_menu_title = "#{{ primary.hex }}"

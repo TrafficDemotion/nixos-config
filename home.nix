@@ -1,4 +1,4 @@
-{ pkgs, inputs, ... }:
+{ pkgs, inputs, config, ... }:
 
 {
   imports = [ inputs.caelestia-shell.homeManagerModules.default ];
@@ -138,6 +138,9 @@
       # 要关必须改 QML（重建 shell），所以这里只做到「关标签页」这一层。
       dashboard.showDashboard = false;
       dashboard.showWeather = false;
+      # Performance 标签页也关掉（2026-09-16 用户要求）→ 仪表盘弹层只剩 Media 一个标签页。
+      # 同一个键在 Nexus → Dashboard → General 里就是 "Show performance tab"。
+      dashboard.showPerformance = false;
       # 主面板时钟显示秒（2026-09-13 用户要求；Nexus → Dashboard → General → "Show clock seconds"）。
       # 它作用的正是上面被关掉的 Dash 标签里的那个时钟（modules/dashboard/dash/DateTime.qml:49,62），
       # 所以这条先写进声明：标签页不开的话暂时看不到效果。
@@ -320,6 +323,33 @@
     };
   };
 
+  # ═══════════════════ 编辑器 GUI 前端：Neovide ═══════════════════
+  # neovide 本体来自 configuration.nix 的 systemPackages，这里只声明它的
+  # ~/.config/neovide/config.toml（home-manager 的 programs.neovide 模块会把 settings
+  # 序列化成 toml；package = null = 不再往用户 profile 里装第二份 neovide）。
+  # 2026-09-16 定：窗口尺寸 1600x1000（屏幕 2560x1440）—— 尺寸不在这里配，见下面的说明；
+  # 字体跟终端同一套 JetBrainsMono Nerd Font，12pt（上游默认是自带的 Fira Code 14pt，
+  # 比 kitty 的 10pt 观感大一截，这里收到接近一档的位置）。
+  # ⚠️ 窗口大小【不】在 neovide 里配：0.16.2 的 `--size`（以及 config 的 size）只在窗口映射前
+  # 请求一次，Wayland 下会被忽略（实测 --size 400x300 依旧开成 800x600）；`--grid` 则有参数组
+  # 冲突 bug 直接退出。所以尺寸写在 hypr/hyprland.lua 的窗口规则 `neovide-size` 里（合成器侧生效）。
+  # 「整体缩放比例」也不在这里：它是 nvim 侧的 vim.g.neovide_scale_factor，写在
+  # nvim/init.lua 的 Neovide 段（= 1.0，不额外缩放）。
+  programs.neovide = {
+    enable = true;
+    package = null;
+    settings = {
+      # 字体族 + 字号。注意：neovide 里“控制字体”的官方那项其实是 nvim 的 guifont 选项
+      # （见 neovide 文档 Configuration → Font），所以 nvim/init.lua 的 Neovide 段里也写了
+      # 一份一模一样的 `vim.o.guifont = "JetBrainsMono Nerd Font:h12"`；这里这份是 nvim 连上
+      # 之前用的首屏值（避免先闪一下默认字体）。改字号要两边一起改，或者只留 guifont 那份。
+      font = {
+        normal = [ "JetBrainsMono Nerd Font" ];
+        size = 12.0;
+      };
+    };
+  };
+
   # ═══════════════════ 编辑器：Neovim ═══════════════════
   # 插件全部来自 nixpkgs（下面的 plugins 列表），没有 lazy.nvim 这类运行时插件管理器：
   # 装插件 = 改列表 + rebuild（不联网拉插件、不在 ~/.local/share/nvim 里落野插件），
@@ -396,6 +426,45 @@
     package = null;
     enableZshIntegration = false;
     settings.mgr.show_hidden = true;
+
+    # 键位（2026-09-16 用户要求）：
+    #   N → 在当前目录打开 neovide      K → 在当前目录打开 kitty
+    #   h / j / k / l → 关掉（绑成 noop：yazi 的“空动作”，内部遇到它会直接把这条 chord
+    #                        过滤掉，见 yazi-config/src/keymap/chord.rs 的 noop()），
+    #                        方向键不受影响，导航照旧。
+    # 为什么不用自己拼路径：yazi 的 shell 命令跑在【当前标签页的 cwd】里
+    # （yazi-actor/src/mgr/shell.rs: `let cwd = form.cwd.unwrap_or_else(|| cx.cwd().clone())`），
+    # 所以 `neovide .` / `kitty` 天然就是当前目录。
+    # --orphan = 脱离 yazi 的任务调度，yazi 退出后窗口不会被连带杀掉。
+    # 注意：prepend_keymap 优先级高于默认键位，所以 N 覆盖了默认的 “find previous”。
+    keymap.mgr.prepend_keymap = [
+      {
+        on = "N";
+        run = "shell --orphan 'neovide .'";
+        desc = "Open Neovide here";
+      }
+      {
+        on = "K";
+        run = "shell --orphan 'kitty'";
+        desc = "Open kitty here";
+      }
+      {
+        on = "h";
+        run = "noop";
+      }
+      {
+        on = "j";
+        run = "noop";
+      }
+      {
+        on = "k";
+        run = "noop";
+      }
+      {
+        on = "l";
+        run = "noop";
+      }
+    ];
   };
 
   # superfile（1.3.3）：上游【没有】这个配置项 —— 配置模板里压根没有 hidden/dotfile
@@ -407,6 +476,20 @@
   # （只在 ~/.local/state/superfile/superfile.log 记一条），下次启动仍按声明值
   # = 恒为显示 dotfile。想保留「切一次永久记住」的语义，就把下面这行删掉。
   xdg.dataFile."superfile/toggleDotFile".text = "true";
+
+  # superfile 的配色（2026-09-16）：与 kitty / nvim 同一套链路 —— 模板交给 Caelestia
+  # 用当前壁纸现算的配色渲染，渲染结果 ~/.local/state/caelestia/theme/superfile.toml 再
+  # 通过一条【出库软链】接到 superfile 自己的主题目录里。为什么必须绕这一下：
+  # superfile 只认「~/.config/superfile/theme/<config.toml 里 theme= 的那个名字>.toml」
+  # （源码 src/internal/common/load_config.go 的 LoadThemeFile：把 Config.Theme + ".toml"
+  # join 到 ThemeFolder 上，不支持绝对路径），而 Caelestia 的渲染输出目录写死在状态目录。
+  # mkOutOfStoreSymlink = home-manager 建一条直接指向绝对路径的软链（不进 nix store）；
+  # Caelestia 重渲染时是「临时文件 + rename」，路径本身还在，软链不会断。
+  # 另一处改动在 superfile 自己生成的用户文件里（不在 Nix 管）：~/.config/superfile/config.toml
+  # 的 `theme = 'caelestia'`（原来是 'catppuccin'）。
+  # 回滚：删掉下面这条 + 把 config.toml 改回 'catppuccin' 即可（模板文件留着无害）。
+  xdg.configFile."superfile/theme/caelestia.toml".source =
+    config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/.local/state/caelestia/theme/superfile.toml";
 
   # ═══════════════════ 浏览器：LibreWolf ═══════════════════
   # 包从 configuration.nix 挪到这里，跟 profile / 自定义 CSS / 设置一起由 home-manager 管。
@@ -645,8 +728,10 @@
   # （真正的渲染是 Caelestia 自己做的，没有自造脚本；样式与颜色名见两个源文件里的注释）：
   #   kitty.conf                → kitty 的 include 目标（终端配色）
   #   catppuccin-overrides.lua  → nvim 的 color_overrides（编辑器配色）
+  #   superfile.toml            → superfile 的主题文件（文件管理器配色，见上面 superfile 段）
   xdg.configFile."caelestia/templates/kitty.conf".source = ./caelestia/kitty.conf;
   xdg.configFile."caelestia/templates/catppuccin-overrides.lua".source = ./caelestia/catppuccin-overrides.lua;
+  xdg.configFile."caelestia/templates/superfile.toml".source = ./caelestia/superfile.toml;
 
   # ═══════════════════ 会话环境变量 ═══════════════════
   home.sessionVariables = {
