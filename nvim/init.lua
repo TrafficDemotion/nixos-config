@@ -132,9 +132,9 @@ end
 if vim.g.neovide then
   -- 字体：neovide 文档（Configuration → Font）里“由 nvim 选项控制”的就是这一项 guifont ——
   -- 所以这里显式写一份；home.nix 的 programs.neovide.settings.font 里那份是 nvim 连上之前
-  -- 的首屏值，两边保持一致（改字号记得一起改）。:h11 = 11pt（2026-09-16 从 12pt 再收小一档，
-  -- 更贴近 kitty 的 10pt；还想更小就改这里的数字，支持小数，如 :h10.5）。
-  vim.o.guifont = "JetBrainsMono Nerd Font:h11"
+  -- 的首屏值，两边保持一致（改字号记得一起改）。:h10 = 10pt（2026-09-16 从 12 → 11 → 10，
+  -- 与 kitty 的 10pt 对齐；还想更小就改这里的数字，支持小数，如 :h9.5）。
+  vim.o.guifont = "JetBrainsMono Nerd Font:h10"
   -- 整体缩放（0.10.2 起支持）：不改变上面那份字体定义，只是把整个 GUI 乘一个系数。
   -- 屏幕是 2560x1440 / Hyprland scale 1.00，所以保持 1.0；觉得整体偏大偏小就 0.9 / 1.1，
   -- 运行时改这一行再 :source 本文件即生效（不用重启 neovide）。
