@@ -470,12 +470,16 @@
     };
 
     # 键位（2026-09-16）：
-    #   h / j / l → 关掉（绑成 noop：yazi 的“空动作”，内部遇到它会直接把这条 chord
-    #                    过滤掉，见 yazi-config/src/keymap/chord.rs 的 noop()），
-    #                    方向键不受影响，导航照旧。
-    # 同一天还加过 n → 在当前目录开 neovide、k → 开 kitty，随后按用户要求撤掉 ——
-    # 撤掉后这两个键恢复 yazi 默认：k = 上移一行、n = 跳到下一个搜索结果。
-    # 想加回来就在下面列表里补一条（prepend 会顶掉同键的默认绑定，代价见上）：
+    #   h / j / k / l → 全部关掉（绑成 noop：yazi 的“空动作”，内部遇到它会直接把这条
+    #                    chord 过滤掉，见 yazi-config/src/keymap/chord.rs 的 noop()）。
+    #   后果：vim 那套字母导航全没了，导航改走这些（都是 yazi 预设、未被覆盖）：
+    #     上/下移动 = <Up> / <Down>
+    #     进目录     = <Enter> 或 <Right>      出目录 = <Left>
+    #     历史前进/后退 = H / L（大写，与 hjkl 无关）
+    #     翻页/首尾 = <PageUp>/<PageDown>、gg / G
+    # 同一天还试过 n → 在当前目录开 neovide、k → 开 kitty，随后按用户要求撤掉 ——
+    # 撤掉后 n 恢复 yazi 默认（跳到下一个搜索结果）；k 现在又被上面这条 noop 接管。
+    # 想加回某个 shell 动作就在下面列表里补一条（prepend 会顶掉同键的默认绑定）：
     #   { on = "n"; run = "shell --orphan 'neovide .'"; desc = "Open Neovide here"; }
     # 顺带记着这种命令为什么不必自己拼路径：yazi 的 shell 命令跑在【当前标签页的 cwd】里
     # （yazi-actor/src/mgr/shell.rs: `let cwd = form.cwd.unwrap_or_else(|| cx.cwd().clone())`）。
@@ -486,6 +490,10 @@
       }
       {
         on = "j";
+        run = "noop";
+      }
+      {
+        on = "k";
         run = "noop";
       }
       {
