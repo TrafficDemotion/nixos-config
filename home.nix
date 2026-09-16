@@ -341,11 +341,12 @@
     settings = {
       # 字体族 + 字号。注意：neovide 里“控制字体”的官方那项其实是 nvim 的 guifont 选项
       # （见 neovide 文档 Configuration → Font），所以 nvim/init.lua 的 Neovide 段里也写了
-      # 一份一模一样的 `vim.o.guifont = "JetBrainsMono Nerd Font:h12"`；这里这份是 nvim 连上
+      # 一份一模一样的 `vim.o.guifont = "JetBrainsMono Nerd Font:h11"`；这里这份是 nvim 连上
       # 之前用的首屏值（避免先闪一下默认字体）。改字号要两边一起改，或者只留 guifont 那份。
+      # 2026-09-16：12pt → 11pt（用户要求再小一点）。
       font = {
         normal = [ "JetBrainsMono Nerd Font" ];
-        size = 12.0;
+        size = 11.0;
       };
     };
   };
