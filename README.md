@@ -11,7 +11,7 @@
 | `configuration.nix` | 系统级：内核与显卡直通、软件假负载、网络、用户、SDDM、Sunshine |
 | `home.nix` | 用户级（paan）：软件包、kitty 配色、Caelestia 外壳设置、zsh |
 | `hypr/hyprland.lua` | Hyprland 0.55 Lua 配置（窗口默认浮动）→ `~/.config/hypr/hyprland.lua` |
-| `nvim/init.lua` | Neovim 配置 → `~/.config/nvim/init.lua`（只读软链） |
+| `nvim/init.lua` | Neovim 配置 → `~/.config/nvim/init.lua`（只读软链）；插件由 Nix 提供、lazy.nvim 加载（见「Neovim 插件」一节） |
 | `caelestia/` | 跟随壁纸取色的模板（kitty 配色 / catppuccin overrides）→ `~/.config/caelestia/templates/` |
 | `librewolf/userChrome.css` | LibreWolf 界面定制（`programs.librewolf.userChrome`） |
 | `edid/aoc-q24g50f.bin` | 显示器的真实 EDID（软件假负载）→ 系统固件目录 |
@@ -70,6 +70,61 @@ sudo git -C /etc/nixos push
 
 恢复：`git clone https://github.com/TrafficDemotion/nixos-config` 到 `/etc/nixos`
 （先备份原文件），新机器重建时 `hardware-configuration.nix` 要按本机重生成。
+
+## Neovim 插件：Nix 提供、lazy.nvim 加载（2026-09-16）
+
+插件的**来源**仍然是 nixpkgs（离线、随 `flake.lock` 可重现、不做 `:TSInstall` 现编），
+只是**加载**交给了 lazy.nvim —— 也就是用它的加载器与 `:Lazy` / `:Lazy profile` 界面，
+但不让它下载或更新任何东西（官方文档里那段 `git clone` 的 bootstrap 也不需要）。
+
+| 在哪 | 是什么 |
+| --- | --- |
+| `home.nix` 顶部 `let` 的 `nvimPlugins` | **唯一**的插件清单（写"要直接用的"插件；依赖不用列） |
+| `home.nix` 的 `programs.neovim.plugins` | 只放 `pkgs.vimPlugins.lazy-nvim`（走 packpath，必须先于其它插件在 rtp 上） |
+| `home.nix` 的 `xdg.configFile."nvim/lua/nix-plugins.lua"` | 把上面的清单**生成**成 lazy 的 spec（`~/.config/nvim/lua/nix-plugins.lua`，只读软链） |
+| `nvim/init.lua` | `require("lazy").setup(require("nix-plugins"), {...})`，后面照旧 `require("插件的模块").setup{}` |
+
+生成的 spec 每条是 `{ name = "<pname 去掉 vimplugin- 前缀>", dir = "/nix/store/…", lazy = false }`：
+
+- `dir` 指向 store 里的插件本体 → lazy 认为它"已安装"，不下载、不更新（`:Lazy` 里没有 install/update 动作）；
+- `lazy = false` = 启动即加载（和改造成 packpath 之前的行为一致）。**要改成懒加载**：
+  光把这里的 `lazy` 改成事件名不够，还得把 `init.lua` 里那个插件的 `require(...).setup` 一起
+  挪进它的 `config` 回调，否则 `require` 找不到模块（`lazy.core.loader` 的 `startup()` 是在
+  `setup()` 里同步跑完的，所以现在这些 require 才能直接写在后面）；
+- **依赖闭包要自己摊平**：nixpkgs 把依赖放在 `passthru.dependencies`（`neo-tree-nvim → plenary/nui`、
+  `nvim-treesitter.withPlugins → 各 grammar`），而 lazy 只认 spec 里出现过的路径 —— 少一个 `nui`
+  就是 neo-tree 直接报模块缺失。生成时用 `foldl'` 递归收集并按 store 路径去重；`catppuccin-nvim`
+  额外给 `priority = 1000`（主题先加载）；
+- 名字用 derivation 的 `pname` 去掉 nixpkgs 的 `vimplugin-` 前缀（`vimplugin-nvim-autopairs → nvim-autopairs`），
+  少数没有 `pname` 的（treesitter 的 queries 那批）退回目录名并剪掉开头的 32 位 store 哈希。
+
+`install.missing` / `checker` / `change_detection` 三项都关掉：插件不是 lazy 管的对象，
+留着只会在面板上出现注定失败的按钮、或对 `/nix/store` 白塞 inotify 监听。
+
+**加减插件**：改 `home.nix` 顶部的 `nvimPlugins` → `sudo nixos-rebuild switch --flake /etc/nixos#nixos`
+（只用 nixpkgs 里有的插件属性名；`nix eval …vimPlugins.<名字>.version` 可先确认有没有）。
+
+**验收手法（不用开窗口）**：
+
+```bash
+# 插件全部注册 + 模块可 require + 无报错
+nvim --headless "+lua local n = 0 for _, p in pairs(require('lazy').plugins()) do n = n + 1 end io.write(n, '\n')" +qa
+nvim --headless "+lua for _, m in ipairs({'catppuccin','lualine','neo-tree','telescope','which-key','ibl','nvim-treesitter','nvim-autopairs'}) do io.write(m, '=', tostring(pcall(require, m)), '\n') end" +qa
+
+# autopairs 真的会补右半边：喂 i( 之后看 buffer（= () 就对了）
+nvim --headless /tmp/t.txt "+lua vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('i(<Esc>', true, false, true), 'mtx', false)" "+lua io.write(table.concat(vim.api.nvim_buf_get_lines(0,0,-1,false), '|'), '\n')" +qa
+
+# :Lazy 面板（要真 PTY）：用 nvim 自报的屏幕，别用 pyte 回放
+timeout 30 script -qec "stty cols 160 rows 42; nvim -c 'luafile /tmp/lazy-screen.lua'" /dev/null </dev/null
+# lazy-screen.lua 里：defer 800ms 打开 :Lazy，defer 4s 用 vim.fn.screenstring(row, col) 把屏幕落盘再 qa!
+```
+
+⚠️ 改了这套之后**不要**再把插件同时列回 `programs.neovim.plugins`：packpath 会先加载一遍、
+lazy 再按 spec 加载一遍（双重加载）。只想临时试新配置而不 rebuild：
+
+```bash
+nvim -u /etc/nixos/nvim/init.lua --cmd 'set rtp^=/nix/store/<插件路径>'   # 插件走默认 packpath 时可用
+```
 
 ## 给 Caelestia 打补丁（已实施）
 

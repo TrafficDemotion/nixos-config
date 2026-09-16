@@ -1,5 +1,55 @@
 { pkgs, inputs, config, ... }:
 
+let
+  # ── Neovim 插件清单（交给 lazy.nvim 加载，见 programs.neovim 那段的说明）──
+  # 这里只写【要直接用的】插件本体；各插件自己的依赖（nixpkgs 放在
+  # passthru.dependencies 里 —— 例：neo-tree-nvim → plenary.nvim / nui.nvim，
+  # nvim-treesitter.withPlugins → 解析器）由下面生成 lua spec 的那段递归摊平后
+  # 一并交给 lazy，不用在这里重复列。
+  nvimPlugins = with pkgs.vimPlugins; [
+    catppuccin-nvim # 颜色主题（Mocha，与 kitty 的配色是同一套）
+    lualine-nvim # statusline
+    bufferline-nvim # 顶部 buffer 标签栏
+    nvim-web-devicons # 上面两个插件的文件类型图标（字体：本机 monospace = JetBrainsMono Nerd Font）
+    neo-tree-nvim # 文件浏览器（左侧树）
+    plenary-nvim # telescope 的依赖
+    telescope-nvim # 查找：文件 / 全文（用 PATH 里的 fd、ripgrep）
+    which-key-nvim # 按 <leader> 后弹出可用快捷键
+    nvim-autopairs # 括号/引号自动配对（setup 在 init.lua 里，全用上游默认值）
+    # 缩进对齐线（上游 lukas-reineke/indent-blankline.nvim，v3，模块名 ibl）；
+    # 开关与颜色写在 nvim/init.lua 的 require("ibl").setup 与 apply_custom_hl 两处。
+    indent-blankline-nvim
+    # Treesitter 的解析器（语法高亮/结构化解析）。nvim 0.12 自带
+    # c/lua/vim/vimdoc/query/markdown 的解析器，这里补常用语言。
+    (nvim-treesitter.withPlugins (
+      p: [
+        p.nix
+        p.lua
+        p.bash
+        p.python
+        p.json
+        p.yaml
+        p.toml
+        p.markdown
+        p.markdown_inline
+        p.c
+        p.cpp
+        p.go
+        p.rust
+        p.javascript
+        p.typescript
+        p.html
+        p.css
+        p.diff
+        p.gitignore
+        p.regex
+        p.vim
+        p.vimdoc
+        p.query
+      ]
+    ))
+  ];
+in
 {
   imports = [ inputs.caelestia-shell.homeManagerModules.default ];
 
@@ -370,9 +420,14 @@
   };
 
   # ═══════════════════ 编辑器：Neovim ═══════════════════
-  # 插件全部来自 nixpkgs（下面的 plugins 列表），没有 lazy.nvim 这类运行时插件管理器：
-  # 装插件 = 改列表 + rebuild（不联网拉插件、不在 ~/.local/share/nvim 里落野插件），
-  # 卸插件 = 从列表里删掉一行。解析器也一样由 Nix 提供，不做 `:TSInstall` 现编。
+  # 插件来源 = nixpkgs（文件顶部 let 里的 nvimPlugins 列表），**加载**交给 lazy.nvim：
+  # Nix 侧把这些插件的路径生成成一份 lua spec（下面那段 xdg.configFile），
+  # init.lua 里 `require("lazy").setup(require("nix-plugins"), {...})` 读它。也就是：
+  #   * 插件本体仍在 /nix/store —— 离线可用、随 flake.lock 可重现、不做 :TSInstall 现编；
+  #   * lazy 只负责加载/开关、提供 :Lazy 与 :Lazy profile 界面，不下载也不更新
+  #     （每条 spec 都带 dir = <store 路径>，lazy 视为「已安装」）。
+  # 装插件 = 往顶部的 nvimPlugins 列表加一项 + rebuild；
+  # 卸插件 = 从列表里删掉一行（不联网拉插件、不在 ~/.local/share/nvim 里落野插件）。
   #
   # 配置本体在 /etc/nixos/nvim/init.lua（同目录），initLua 把它读进来生成
   # ~/.config/nvim/init.lua —— 那份是指向 /nix/store 的只读软链，别直接改。
@@ -387,51 +442,76 @@
     viAlias = true;
     vimAlias = true;
 
-    plugins = with pkgs.vimPlugins; [
-      catppuccin-nvim # 颜色主题（Mocha，与 kitty 的配色是同一套）
-      lualine-nvim # statusline
-      bufferline-nvim # 顶部 buffer 标签栏
-      nvim-web-devicons # 上面两个插件的文件类型图标（字体：本机 monospace = JetBrainsMono Nerd Font）
-      neo-tree-nvim # 文件浏览器（左侧树）
-      plenary-nvim # telescope 的依赖
-      telescope-nvim # 查找：文件 / 全文（用 PATH 里的 fd、ripgrep）
-      which-key-nvim # 按 <leader> 后弹出可用快捷键
-      # 缩进对齐线（上游 lukas-reineke/indent-blankline.nvim，v3，模块名 ibl）；
-      # 开关与颜色写在 nvim/init.lua 的 require("ibl").setup 与 apply_custom_hl 两处。
-      indent-blankline-nvim
-      # Treesitter 的解析器（语法高亮/结构化解析）。nvim 0.12 自带
-      # c/lua/vim/vimdoc/query/markdown 的解析器，这里补常用语言。
-      (nvim-treesitter.withPlugins (
-        p: [
-          p.nix
-          p.lua
-          p.bash
-          p.python
-          p.json
-          p.yaml
-          p.toml
-          p.markdown
-          p.markdown_inline
-          p.c
-          p.cpp
-          p.go
-          p.rust
-          p.javascript
-          p.typescript
-          p.html
-          p.css
-          p.diff
-          p.gitignore
-          p.regex
-          p.vim
-          p.vimdoc
-          p.query
-        ]
-      ))
-    ];
+    # 这里只放 lazy.nvim 本体：它必须先于其它插件出现在 runtimepath 上，
+    # 由 home-manager 直接铺进 packpath（~/.local/share/nvim/site/pack/hm/start），
+    # 所以不需要官方文档里那段 `git clone` 的 bootstrap（本机也不让编辑器联网拉插件）。
+    # 其余插件都在顶部的 nvimPlugins 列表里，由 lazy 按下面生成的 spec 加载。
+    plugins = [ pkgs.vimPlugins.lazy-nvim ];
 
     initLua = builtins.readFile ./nvim/init.lua;
   };
+
+  # ── lazy.nvim 的插件清单（由 Nix 生成，别手改）────────────────────────────
+  # 每条 = { name, dir = <store 路径>, lazy = false }：
+  #   * dir 指向 /nix/store 里的插件本体 → lazy 认为它「已安装」，不下载不更新
+  #     （在 :Lazy 面板里归到本地那种，没有 install/update 动作）；
+  #   * lazy = false = 启动即加载，跟改造前（全部由 packpath 自动加载）行为一致。
+  #     想改成按事件/文件类型懒加载：光改这里的 lazy 不够，还得把 init.lua 里那个
+  #     插件的 require(...).setup 一起挪进它的 config 回调，否则 require 找不到模块。
+  # 依赖（passthru.dependencies，递归）在这里摊平 —— lazy 只认 spec 里出现过的路径，
+  # 不像 home-manager 的 plugins 那样会自动带上依赖（少一个 nui，neo-tree 就直接
+  # 报「模块找不到」）。
+  xdg.configFile."nvim/lua/nix-plugins.lua".text =
+    let
+      lib = pkgs.lib;
+
+      # 依赖闭包：自己在前、依赖在后，按 store 路径去重（用路径比较，避免深比较 attrset）
+      add =
+        seen: p:
+        let
+          path = toString p;
+        in
+        if builtins.any (x: toString x == path) seen then
+          seen
+        else
+          builtins.foldl' add (seen ++ [ p ]) (p.dependencies or []);
+
+      # lazy 面板里显示的名字 = derivation 的 pname 去掉 nixpkgs 的 "vimplugin-" 前缀
+      # （vimplugin-nvim-autopairs → nvim-autopairs）。少数没有 pname 的（treesitter 的
+      # queries 那批）退回目录名，并把开头的 32 位 store 哈希剪掉。
+      luaName =
+        p:
+        let
+          raw = p.pname or (baseNameOf (toString p));
+        in
+        lib.removePrefix "vimplugin-" (
+          if builtins.match "[0-9a-z]{32}-.*" raw != null then
+            lib.removePrefix "${builtins.head (lib.splitString "-" raw)}-" raw
+          else
+            raw
+        );
+
+      entry =
+        p:
+        let
+          name = luaName p;
+        in
+        ''
+          {
+            name = "${name}",
+            dir = "${toString p}",
+            lazy = false,${
+              lib.optionalString (name == "catppuccin-nvim") " -- 主题要最先加载\n            priority = 1000,"
+            }
+          },'';
+    in
+    ''
+      -- ⚠️ 本文件由 home.nix 生成，不要手改：改 home.nix 顶部的 nvimPlugins 列表后 rebuild。
+      -- 每个字段的含义见 home.nix 里生成这一段的那段注释。
+      return {
+      ${lib.concatMapStrings entry (builtins.foldl' add [] nvimPlugins)}
+      }
+    '';
 
   # ═══════════════════ 终端文件管理器：yazi / superfile ═══════════════════
   # 两个都声明「默认显示 dotfile」，但机制不一样（原因写在各段注释里）。

@@ -5,8 +5,11 @@
 -- builtins.readFile ./nvim/init.lua 读它，生成的 ~/.config/nvim/init.lua
 -- 是指向 /nix/store 的【只读软链】。
 --   * 改配置 = 改这个文件，然后：sudo nixos-rebuild switch --flake /etc/nixos#nixos
---   * 插件同样由 Nix 提供（home.nix 的 programs.neovim.plugins），
---     没有 lazy.nvim 之类的运行时插件管理器，不联网拉插件、不做 :TSInstall 现编。
+--   * 插件的【来源】还是 Nix（home.nix 顶部 let 里的 nvimPlugins 列表 → nixpkgs 的
+--     vimPlugins），插件的【加载】交给 lazy.nvim：清单由 Nix 生成到
+--     ~/.config/nvim/lua/nix-plugins.lua，本文件里 `require("lazy").setup(...)` 读它。
+--     仍然是离线、可重现的路子：lazy 不下载也不更新插件（每条 spec 都带 dir =
+--     /nix/store 路径），只用它的加载器与 :Lazy 界面。加插件 = 改 home.nix 再 rebuild。
 -- ═══════════════════════════════════════════════════════════════════════════
 
 local opt = vim.opt
@@ -62,6 +65,24 @@ vim.api.nvim_create_autocmd("FileType", {
 -- 关掉 netrw：目录浏览交给 neo-tree
 vim.g.loaded_netrw = 1
 vim.g.loaded_netrwPlugin = 1
+
+-- ── 插件管理：lazy.nvim ───────────────────────────────────────────────────
+-- 插件清单不写在这里，而是由 Nix 生成到 ~/.config/nvim/lua/nix-plugins.lua
+-- （源 = home.nix 的 nvimPlugins 列表 + 那段 xdg.configFile）：每条都是
+--   { name = "...", dir = "/nix/store/...", lazy = false }
+-- 所以 lazy 在这里只干三件事：把插件挂上 runtimepath、按 spec 决定加载时机、
+-- 提供 :Lazy / :Lazy profile 界面 —— 不下载、不更新（插件本体由 Nix 提供）。
+-- 必须放在下面所有 require("<插件>") 之前：setup() 会【同步】加载 lazy = false 的
+-- 插件（lazy.core.loader 的 startup() 在 setup() 末尾跑），之后那些 require 才找得到模块。
+-- lazy.nvim 自己由 home-manager 放进 packpath（programs.neovim.plugins），
+-- 不需要官方文档里那段 `git clone` 的 bootstrap。
+require("lazy").setup(require("nix-plugins"), {
+  -- 插件全在 /nix/store 里、由 Nix 管，下面这些能力一律关掉，
+  -- 免得 :Lazy 面板上出现注定失败或没意义的 install/update 提示。
+  install = { missing = false },
+  checker = { enabled = false },
+  change_detection = { enabled = false },
+})
 
 -- ── 颜色主题：跟随 Caelestia 的壁纸取色（用 catppuccin 那套键名）───────────
 -- 调色板由 Caelestia 从当前壁纸现算，渲染到
@@ -341,7 +362,7 @@ require("which-key").add({
 })
 
 -- ── 缩进对齐线：indent-blankline（模块名 ibl，v3）──────────────────────────
--- 插件由 Nix 提供（home.nix 的 programs.neovim.plugins 里的 indent-blankline-nvim），
+-- 插件由 Nix 提供（home.nix 顶部的 nvimPlugins 列表 → 由 lazy 加载），
 -- 这里只写配置；颜色不在这里 —— 见上面 apply_custom_hl 的 IblIndent / IblScope
 -- （要用跟壁纸走的那套调色板，所以跟主题一起重设）。
 -- 上游默认（v3.9.1）：indent.char = "▎"（左侧 1/8 方块）、scope 打开且带首尾标记；
@@ -358,6 +379,14 @@ require("ibl").setup({
     filetypes = { "neo-tree", "wk", "help", "lazy", "mason", "telescope", "NvimTree" },
   },
 })
+
+-- ── 自动配对：nvim-autopairs ───────────────────────────────────────────────
+-- 输入 ( [ { " ' 时自动补上右半边、光标停在中间；再敲一次同样的右括号 = 直接跳过它。
+-- 插件由 Nix 提供（home.nix 顶部的 nvimPlugins 列表），这里用上游默认值：
+-- 默认已在 TelescopePrompt / vim 里关掉，不需要额外设置。
+-- 想调节见 `:h nvim-autopairs`：map_cr = true（在括号里按回车自动换行缩进）、
+-- fast_wrap（把已有的一段文字用括号包起来）、disable_filetype / disable_in_macro 等。
+require("nvim-autopairs").setup({})
 
 -- ── 常用快捷键 ────────────────────────────────────────────────────────────
 map("n", "<Esc>", "<cmd>nohlsearch<cr>", { desc = "Clear search highlight" })
