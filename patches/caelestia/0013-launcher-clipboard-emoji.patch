@@ -256,10 +256,10 @@ index 0000000..3d0852f
 +}
 diff --git a/modules/launcher/services/Clipboard.qml b/modules/launcher/services/Clipboard.qml
 new file mode 100644
-index 0000000..c8abf49
+index 0000000..4c8bfa1
 --- /dev/null
 +++ b/modules/launcher/services/Clipboard.qml
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,132 @@
 +// 剪贴板历史来源（Super+V 的「外壳内」版本）
 +//
 +// 数据源与 `caelestia clipboard` 命令完全相同：cliphist 的历史库。
@@ -334,32 +334,29 @@ index 0000000..c8abf49
 +        readonly property string icon: mime === "" ? "content_paste" : "image"
 +
 +        function onClicked(list: AppList): void {
-+            list.screenState.launcher = false;
-+            // ⚠️ 三条坑叠在这一个函数里（都踩过）：
-+            // 1) 不能往 Process 的 stdin 里 write()：Quickshell 写完不关 stdin，cliphist/wl-copy
-+            //    会一直等 EOF，选区根本挂不上 —— 必须用管道收尾。
-+            // 2) **不能在「启动器关闭的同一帧」挂选区**：启动器是带键盘抓取
-+            //    （HyprlandFocusGrab）的图层，关闭瞬间挂上去的剪贴板，应用（kitty /
-+            //    LibreWolf）Ctrl+V 读不到内容；隔一会儿再挂就正常（自己 Ctrl+C 粘贴一直正常，
-+            //    因为那没有启动器参与）。所以这里用 Timer 延后 400ms 再复制。
-+            // 3) 由**外壳** fork 出来的 wl-copy 也不保险（caelestia.service 随重启会带走选区），
-+            //    所以真正挂选区那步交给 Hyprland 起；本机 Hyprland 是 **Lua 配置**，
-+            //    `hyprctl dispatch exec …` 旧语法会被静默拒掉，必须 `hl.dsp.exec_cmd(...)`。
-+            pending.payload = modelData;
-+            pending.mime = mime;
-+            pending.restart();
++            // ⚠️ 顺序：**先复制，再关启动器**（2026-09-16 定案，用户真机验证）
++            // 应用只有在**重新拿到键盘焦点**时才会收到新的 selection，而启动器关闭正是应用
++            // 拿回焦点的那一刻。先关面板再复制 → 那次焦点事件发生在选区之前，应用永远读不到
++            // 新内容（表现：点条目后粘不出来，必须再手动点一下窗口才能粘）；先复制再关就正常。
++            // IPC 对照实验已确认（无启动器 vs 启动器开着时复制再关闭），与谁 fork wl-copy 无关。
++            // 另外两条也不能违反：不能 write() 进 stdin；挂选区交给 Hyprland 起（本机 Lua 配置）。
++            root.copyToClipboard(modelData, mime);
++            closeTimer.target = list;
++            closeTimer.restart();
 +        }
 +    }
 +
-+    // 延后 400ms 再挂选区（原因见上面 Clip.onClicked 的注释 2）
++    // 复制完再关启动器（顺序原因见 Clip.onClicked 的注释）；500ms 是留给复制落地的时间。
 +    Timer {
-+        id: pending
++        id: closeTimer
 +
-+        property string payload: ""
-+        property string mime: ""
++        property var target: null
 +
-+        interval: 400
-+        onTriggered: root.copyToClipboard(payload, mime)
++        interval: 500
++        onTriggered: {
++            if (target)
++                target.screenState.launcher = false;
++        }
 +    }
 +
 +    // 真正的复制动作：外壳只往 /tmp 写「选中的行」+ 一个内容固定的 helper，
@@ -397,10 +394,10 @@ index 0000000..c8abf49
 +}
 diff --git a/modules/launcher/services/Emojis.qml b/modules/launcher/services/Emojis.qml
 new file mode 100644
-index 0000000..9455ad3
+index 0000000..d283604
 --- /dev/null
 +++ b/modules/launcher/services/Emojis.qml
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,98 @@
 +// emoji 选择器来源（Super+. 的「外壳内」版本）
 +//
 +// 数据来自 `caelestia emoji`（不带 -p 时它直接把内置的 emojis.txt 打到 stdout，
@@ -456,23 +453,25 @@ index 0000000..9455ad3
 +        readonly property string desc: ""
 +
 +        function onClicked(list: AppList): void {
-+            list.screenState.launcher = false;
-+            // 与 Clipboard.qml 同样的坑：不能 write() stdin、不能在启动器关闭的同一帧挂选区
-+            // （要延后）、不能由外壳 fork wl-copy（交给 Hyprland，且本机是 Lua 配置，
-+            // 必须 hl.dsp.exec_cmd(...)）。
-+            pending.payload = glyph;
-+            pending.restart();
++            // 与 Clipboard.qml 同样的坑：不能 write() stdin、**必须先复制再关面板**
++            // （应用是在启动器关闭、自己拿回焦点时才收到新 selection 的）。
++            root.copyEmoji(glyph);
++            closeTimer.target = list;
++            closeTimer.restart();
 +        }
 +    }
 +
-+    // 延后 400ms 再挂选区（原因见 Clipboard.qml 的注释）
++    // 复制完再关启动器（顺序原因见 Clipboard.qml 的注释）
 +    Timer {
-+        id: pending
++        id: closeTimer
 +
-+        property string payload: ""
++        property var target: null
 +
-+        interval: 400
-+        onTriggered: root.copyEmoji(payload)
++        interval: 500
++        onTriggered: {
++            if (target)
++                target.screenState.launcher = false;
++        }
 +    }
 +
 +    // 外壳只写文件，挂选区交给 Hyprland（见 Clipboard.qml 注释 3）
