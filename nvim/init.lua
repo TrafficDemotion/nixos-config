@@ -284,6 +284,35 @@ map("n", "<leader>bp", "<cmd>BufferLinePick<cr>", { desc = "Pick buffer" })
 map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "Close buffer" })
 map("n", "<leader>bo", "<cmd>BufferLineCloseOthers<cr>", { desc = "Close other buffers" })
 
+-- ── 左侧树宽度：记住上次的值 ────────────────────────────────────────────────
+-- 上游没有任何持久化开关：neo-tree 的 `window` 只有 position/width/height/auto_expand_width/popup
+-- （`lua/neo-tree/defaults.lua`，全仓库搜 persist/remember 无命中；它只在**本次会话内**把用户拖过的
+-- 宽度记在 `state.window.last_user_width`），nvim 核心也只有 `:mksession` 那套整会话布局 —— 管不到
+-- neo-tree 这种 nofile 侧栏。所以这里用一小块状态补齐：
+--   ~/.local/state/nvim/neotree-width  ← 退出（VimLeavePre）时写下当时树的列数；
+--                                        下次启动把它当 `window.width` 用（见下面 neo-tree 配置）。
+-- 只管宽度；树开着还是关着、展开了哪些目录都不在这个范围里。
+-- 想恢复「永远 34 列」：删掉这个文件再启动一次即可（或把下面 window.width 写死）。
+local function neotree_state_path()
+  return vim.fs.joinpath(vim.fn.stdpath("state"), "neotree-width")
+end
+
+local function read_saved_neotree_width()
+  local f = io.open(neotree_state_path(), "r")
+  if not f then
+    return nil
+  end
+  local n = tonumber(f:read("*l"))
+  f:close()
+  if not n then
+    return nil
+  end
+  -- 夹一下：太窄没意义，太宽会把编辑区挤没（也防这个文件被手改坏）
+  return math.max(10, math.min(math.floor(n), math.max(10, math.floor(vim.o.columns * 0.5))))
+end
+
+local saved_tree_width = read_saved_neotree_width() or 34
+
 -- ── 文件浏览器：neo-tree（左侧树）─────────────────────────────────────────
 -- 形态：普通分栏侧栏（position 默认 "left"，宽度见下面 window）。占位、不盖代码。
 -- 2026-09-17 用户要求：回到刚装 neo-tree 时那个 split window 的样子 —— 之前那套
@@ -300,7 +329,7 @@ require("neo-tree").setup({
     -- 它在被劫持的目录 buffer 上会留下 E216（无害但脏），改用下面的 VimEnter 按需打开。
     hijack_netrw_behavior = "disabled",
   },
-  window = { width = 34 }, -- 左侧分栏宽度（占位，不浮在代码上）
+  window = { width = saved_tree_width }, -- 左侧分栏宽度：上次退出时的值（见上面那段说明；没有记录时 = 34）
   default_component_configs = {
     indent = { with_expanders = true },
   },
@@ -343,6 +372,25 @@ vim.api.nvim_create_autocmd("VimEnter", {
     end
 
     vim.cmd("Neotree show dir=" .. vim.fn.fnameescape(dir))
+  end,
+})
+
+-- 退出时把左侧树的当前宽度记到状态文件（下次启动拿它当 window.width，见上面那段说明）。
+-- 用 VimLeavePre 而不是 VimLeave：这个时机窗口还在（VimLeave 时已经关掉了）。
+-- 树当时是关着的话就不写，保留上一次的记录。
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  callback = function()
+    for _, w in ipairs(vim.api.nvim_list_wins()) do
+      if vim.bo[vim.api.nvim_win_get_buf(w)].filetype == "neo-tree" then
+        vim.fn.mkdir(vim.fn.stdpath("state"), "p")
+        local f = io.open(neotree_state_path(), "w")
+        if f then
+          f:write(("%d\n"):format(vim.api.nvim_win_get_width(w)))
+          f:close()
+        end
+        break
+      end
+    end
   end,
 })
 
