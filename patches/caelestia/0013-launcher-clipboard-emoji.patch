@@ -75,15 +75,180 @@ index 4231a26..aa1fcbf 100644
      }
  
 diff --git a/modules/launcher/AppList.qml b/modules/launcher/AppList.qml
-index 185a606..3910bd9 100644
+index 185a606..fddadbb 100644
 --- a/modules/launcher/AppList.qml
 +++ b/modules/launcher/AppList.qml
-@@ -27,9 +27,13 @@ StyledListView {
+@@ -2,6 +2,7 @@ pragma ComponentBehavior: Bound
+ 
+ import QtQuick
+ import Quickshell
++import Quickshell.Io
+ import Caelestia.Config
+ import qs.components
+ import qs.components.containers
+@@ -18,6 +19,153 @@ StyledListView {
+ 
+     property string displayText
+ 
++    // 每次打开启动器时 ++ —— 模型绑定读它，从而强制重算（数据可能在面板打开之后才到位）
++    property int refreshTick: 0
++
++    // ── emoji 面板（Super+.）的数据与搜索 ────────────────────────────────────
++    // 数据源 = `caelestia emoji`（12,589 行，每行 "<字形> 空格分隔的关键词"）。
++    // 为什么放在 AppList 里而不是单独的 services/Emojis.qml 单例：本机那个形状的
++    // 单例外部拿不到函数（实测 typeof Emojis.search 为 undefined，TypeError: not a function），
++    // 而 AppList 自己声明的函数与 Process 一直是好的。
++    // 关键性能点：只存字符串、按键时一次 indexOf 扫描 + 截断。不要用 Searcher+Variants，
++    // 那会把 12,589 行全部实例化成对象、每按键再喂上千条给 ListView → 外壳直接卡死（实测）。
++    property var emojiLines: []
++    readonly property int emojiMaxResults: 300
++
++    function emojiReload(): void {
++        if (emojiLines.length === 0)
++            emojiFetch.running = true;
++    }
++
++    // 顺序子序列匹配（"nihao" 也能命中 "…n…i…h…a…o…"），返回跨度（越小越紧凑）；不匹配 -1。
++    // 注意：搜索函数里**不要**调用本文件的其他函数 —— 模型绑定可能在面板关闭、对象已析构后
++    // 又被触发（数据晚到），那时这些调用会解析成 "of object [null]"。所以搜索逻辑全部内联
++    // 在一个函数里，只有非绑定上下文（delegate 点击、打开钩子）才调用 emojiActivate/emojiReload。
++    function emojiSearch(text: string): var {
++        if (emojiLines === undefined || emojiLines === null || emojiLines.length === 0)
++            return [];
++
++        const prefix = `${GlobalConfig.launcher.actionPrefix}emoji `;
++        const raw = String(text ?? "");
++        const q = (raw.startsWith(prefix) ? raw.slice(prefix.length) : raw).trim().toLowerCase();
++        const max = 300;
++        const out = [];
++
++        const mk = (glyph, name, score) => {
++            const it = {
++                "glyph": glyph,
++                "name": name,
++                "desc": ""
++            };
++            if (score !== undefined)
++                it["score"] = score;
++            return it;
++        };
++
++        const subseq = (hay, needle) => {
++            let hi = 0, first = -1, last = -1;
++            for (let ni = 0; ni < needle.length; ni++) {
++                const c = needle[ni];
++                let found = -1;
++                while (hi < hay.length) {
++                    if (hay[hi] === c) {
++                        found = hi;
++                        hi++;
++                        break;
++                    }
++                    hi++;
++                }
++                if (found < 0)
++                    return -1;
++                if (first < 0)
++                    first = found;
++                last = found;
++            }
++            return last - first;
++        };
++
++        for (let i = 0; i < emojiLines.length && out.length < max; i++) {
++            const line = emojiLines[i];
++            const sp = line.indexOf(" ");
++            const glyph = sp < 0 ? line : line.slice(0, sp);
++            const name = sp < 0 ? "" : line.slice(sp + 1);
++
++            if (q === "") {
++                out.push(mk(glyph, name));
++                continue;
++            }
++
++            const idx = name.toLowerCase().indexOf(q);
++            if (idx >= 0)
++                out.push(mk(glyph, name, idx));
++        }
++
++        // 命中优先级：子串（越靠词首越前）> 子序列（跨度越小越紧凑）
++        if (q !== "") {
++            if (out.length < 30) {
++                const seen = new Set();
++                for (let i = 0; i < out.length; i++)
++                    seen.add(out[i].name);
++
++                for (let i = 0; i < emojiLines.length && out.length < max; i++) {
++                    const line = emojiLines[i];
++                    const sp = line.indexOf(" ");
++                    const glyph = sp < 0 ? line : line.slice(0, sp);
++                    const name = sp < 0 ? "" : line.slice(sp + 1);
++                    if (seen.has(name))
++                        continue;
++                    const span = subseq(name.toLowerCase(), q);
++                    if (span < 0)
++                        continue;
++                    out.push(mk(glyph, name, 100 + span));
++                }
++            }
++
++            out.sort((a, b) => a.score !== b.score ? a.score - b.score : a.name.length - b.name.length);
++        }
++
++        return out;
++    }
++
++    // 选中：先把字形交给 Hyprland 起 wl-copy（外壳自己 fork 的选区应用粘不出来，见 Clipboard.qml），
++    // 250ms 后再关面板 —— 顺序不能反（应用是拿回焦点那一刻才收到新 selection 的）。
++    // 由 EmojiItem 的 onClicked 调用（非绑定上下文）。
++    function emojiActivate(glyph: string): void {
++        const tmp = `/tmp/caelestia-emoji-${Date.now()}`;
++        const helper = `${tmp}.sh`;
++        const cmd = [
++            `printf '%s' "$1" > ${tmp}`,
++            `printf '%s\\n' 'i=0; while [ ! -e ${tmp} ] && [ $i -lt 250 ]; do i=$((i+1)); sleep 0.02; done' 'wl-copy < ${tmp}' 'rm -f ${tmp} ${helper}' > ${helper}`,
++            `SIG=\${HYPRLAND_INSTANCE_SIGNATURE:-$(ls -dt "$XDG_RUNTIME_DIR"/hypr/*/ 2>/dev/null | head -1 | xargs -r basename)}`,
++            `HYPRLAND_INSTANCE_SIGNATURE=$SIG hyprctl dispatch "hl.dsp.exec_cmd(\\"sh ${helper}\\")"`
++        ].join("\n");
++        Quickshell.execDetached(["sh", "-c", cmd, "hermes", glyph]);
++        emojiClose.target = root.screenState;
++        emojiClose.restart();
++    }
++
++    Timer {
++        id: emojiClose
++
++        property var target: null
++
++        interval: 250
++        onTriggered: {
++            if (target)
++                target.launcher = false;
++        }
++    }
++
++    Process {
++        id: emojiFetch
++
++        command: ["caelestia", "emoji"]
++
++        stdout: StdioCollector {
++            onStreamFinished: root.emojiLines = text.split("\n").filter(line => line.trim() !== "")
++        }
++    }
++
+     readonly property string requestedState: stateForText(search.text)
+     readonly property string displayState: stateForText(displayText)
+ 
+@@ -27,9 +175,16 @@ StyledListView {
      }
  
      function stateForText(text: string): string {
-+        // 由快捷键/IPC 直接指定模式（Super+V / Super+.）：此时不看前缀
-+        if (screenState.launcherMode !== "")
++        // 由快捷键/IPC 直接指定模式（Super+V / Super+.）：此时不看前缀。
++        // ⚠️ 必须要求 launcher 真的开着：launcherMode 在 ScreenState（PersistentProperties）里
++        // 会被持久化，外壳重启后仍残留上一次的模式 → 启动那一刻就会让模型去调 clipboard/emoji
++        // 数据源，而单例还没就绪 → TypeError 并且模型永久停在空结果（2026-09-17 实测）。
++        if (screenState.launcher && screenState.launcherMode !== "")
 +            return screenState.launcherMode;
 +
          const prefix = GlobalConfig.launcher.actionPrefix;
@@ -93,22 +258,58 @@ index 185a606..3910bd9 100644
                  if (text.startsWith(`${prefix}${action} `))
                      return action;
  
-@@ -49,6 +53,10 @@ StyledListView {
-             return Schemes.query(text);
-         case "variant":
-             return M3Variants.query(text);
-+        case "clipboard":
-+            return Clipboard.query(text);
-+        case "emoji":
-+            return Emojis.query(text);
-         default:
-             return Apps.search(text);
-         }
-@@ -56,7 +64,12 @@ StyledListView {
+@@ -40,23 +195,46 @@ StyledListView {
+     }
+ 
+     function resultsForText(text: string): var {
+-        switch (stateForText(text)) {
+-        case "actions":
+-            return Actions.query(text);
+-        case "calc":
+-            return [0];
+-        case "scheme":
+-            return Schemes.query(text);
+-        case "variant":
+-            return M3Variants.query(text);
+-        default:
+-            return Apps.search(text);
+-        }
++        const res = (() => {
++            switch (stateForText(text)) {
++            case "actions":
++                return Actions.query(text);
++            case "calc":
++                return [0];
++            case "scheme":
++                return Schemes.query(text);
++            case "variant":
++                return M3Variants.query(text);
++            case "clipboard":
++                return Clipboard.query(text);
++            case "emoji":
++                return root.emojiSearch(text);
++            default:
++                return Apps.search(text);
++            }
++        })();
++        // 面板一次只显示 7 行：列表很长时（emoji 有 12,589 条，一个字母能匹配上千条）
++        // 让 ScriptModel/ListView 吃下上千项会卡死外壳 —— 截断到 300 条，对使用不可见。
++        return res && res.length > 300 ? res.slice(0, 300) : res;
+     }
  
      model: ScriptModel {
-         values: root.resultsForText(root.displayText)
+-        values: root.resultsForText(root.displayText)
 -        onValuesChanged: root.currentIndex = 0
++        // 显式依赖「刷新计数 + 两个数据源的 rawLines」后再求值：
++        // 只依赖 displayText 的话，数据晚到或启动瞬间的求值失败都会让面板永久停在旧结果/空结果。
++        values: {
++            // ① 每次打开面板都重算（见 onLauncherChanged 里 refreshTick++）
++            root.refreshTick;
++            // ② 依赖数据本身：拉到数据后自动重算（单例未就绪时是 undefined，这里只读取、不碰属性）
++            Clipboard.rawLines;
++            root.emojiLines;
++            return root.resultsForText(root.displayText);
++        }
 +        onValuesChanged: {
 +            root.currentIndex = 0;
 +            // 换模型（比如打字过滤）时也回到开头；Qt.callLater 等布局完成，
@@ -118,7 +319,7 @@ index 185a606..3910bd9 100644
      }
  
      spacing: Tokens.spacing.small
-@@ -84,9 +97,40 @@ StyledListView {
+@@ -84,12 +262,58 @@ StyledListView {
  
      state: screenState.launcher ? requestedState : displayState
  
@@ -132,12 +333,13 @@ index 185a606..3910bd9 100644
 +        function onLauncherChanged(): void {
 +            if (!root.screenState.launcher)
 +                return;
-+            // 每次打开都无条件重新拉数据（两个列表都很轻）。只靠 onStateChanged 不够：
-+            // 反复用 Super+V 打开时 state/launcherMode 可能都没变化 → 不触发刷新 → 面板
-+            // 停在旧快照（实测：刚复制的那条在最顶上却看不见，列表还停在更早的一批）。
-+            // 这里不判断模式，直接两个都刷；判断模式反而会因为时序（state 绑定尚未重算）而漏掉。
++            // 每次打开都重新拉剪贴板（动态数据，重开时 state 常常不变 → onStateChanged 不触发，
++            // 不刷就会停在旧快照：实测 cliphist 已到 135、面板还显示 100–107）。
 +            Clipboard.reload();
-+            Emojis.reload();
++            // emoji 那份数据是静态文件（12,589 行），只存字符串（不实例化对象），
++            // reload 内部也只在还没拉到数据时才真去拉一次 —— 挂这里很便宜。
++            root.emojiReload();
++            root.refreshTick++;
 +            Qt.callLater(root.resetScroll);
 +        }
 +    }
@@ -155,11 +357,29 @@ index 185a606..3910bd9 100644
 +        else if (state === "clipboard")
 +            Clipboard.reload();
 +        else if (state === "emoji")
-+            Emojis.reload();
++            root.emojiReload();
      }
  
-     Component.onCompleted: displayText = search.text
-@@ -126,6 +170,20 @@ StyledListView {
+-    Component.onCompleted: displayText = search.text
++    // 外壳启动后延迟重算一次：单例/数据在启动那一刻可能都不在位（launcher 与 launcherMode
++    // 是持久化属性，可能带着上一次的状态启动），等一切就绪后再让模型算一遍。
++    // 注意：同一个对象上只能有一个 Component.onCompleted 处理器，所以并进下面那个里。
++    Timer {
++        id: settleTimer
++
++        interval: 1500
++        repeat: false
++        onTriggered: root.refreshTick++
++    }
++
++    Component.onCompleted: {
++        displayText = search.text;
++        settleTimer.start();
++    }
+ 
+     states: [
+         State {
+@@ -126,6 +350,20 @@ StyledListView {
              PropertyChanges {
                  root.delegate: variantItem
              }
@@ -180,7 +400,7 @@ index 185a606..3910bd9 100644
          }
      ]
  
-@@ -287,6 +345,22 @@ StyledListView {
+@@ -287,6 +525,22 @@ StyledListView {
          }
      }
  
@@ -240,10 +460,10 @@ index f5058f0..bda9e0f 100644
              function onSessionChanged(): void {
 diff --git a/modules/launcher/items/EmojiItem.qml b/modules/launcher/items/EmojiItem.qml
 new file mode 100644
-index 0000000..3d0852f
+index 0000000..ff12cac
 --- /dev/null
 +++ b/modules/launcher/items/EmojiItem.qml
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,55 @@
 +import QtQuick
 +import Caelestia.Config
 +import qs.components
@@ -264,7 +484,8 @@ index 0000000..3d0852f
 +
 +    StateLayer {
 +        radius: Tokens.rounding.large
-+        onClicked: root.modelData?.onClicked(root.list)
++        // 选中动作在 AppList（list）里：它负责先挂选区、250ms 后再关面板
++        onClicked: root.list?.emojiActivate(root.modelData?.glyph ?? "")
 +    }
 +
 +    Item {
@@ -436,109 +657,5 @@ index 0000000..d43b5f2
 +
 +        name: "caelestia.qml.launcher.clipboard"
 +        defaultLogLevel: LoggingCategory.Warning
-+    }
-+}
-diff --git a/modules/launcher/services/Emojis.qml b/modules/launcher/services/Emojis.qml
-new file mode 100644
-index 0000000..cc91700
---- /dev/null
-+++ b/modules/launcher/services/Emojis.qml
-@@ -0,0 +1,98 @@
-+// emoji 选择器来源（Super+. 的「外壳内」版本）
-+//
-+// 数据来自 `caelestia emoji`（不带 -p 时它直接把内置的 emojis.txt 打到 stdout，
-+// 每行 "<字形> 空格分隔的关键词"），选中后把字形交给 wl-copy —— 与
-+// `caelestia emoji -p` 的行为一致，只是列表换成了启动器自己画。
-+// 输入 `>emoji ` 也能进同一个状态。
-+pragma Singleton
-+
-+import ".."
-+import QtQuick
-+import Quickshell
-+import Quickshell.Io
-+import Caelestia.Config
-+import qs.utils
-+
-+Searcher {
-+    id: root
-+
-+    // `caelestia emoji` 输出的原始行
-+    property var rawLines: []
-+
-+    function reload(): void {
-+        if (root.rawLines.length === 0)
-+            fetch.running = true;
-+    }
-+
-+    function transformSearch(search: string): string {
-+        const prefix = `${GlobalConfig.launcher.actionPrefix}emoji `;
-+        return search.startsWith(prefix) ? search.slice(prefix.length) : search;
-+    }
-+
-+    function selector(item: var): string {
-+        return item.name;
-+    }
-+
-+    list: entries.instances
-+    useFuzzy: true
-+    keys: ["name"]
-+    weights: [1]
-+
-+    Variants {
-+        id: entries
-+
-+        model: root.rawLines
-+        Emoji {}
-+    }
-+
-+    component Emoji: QtObject {
-+        required property var modelData
-+
-+        readonly property string glyph: modelData.split(" ")[0] ?? ""
-+        readonly property string name: modelData.slice(glyph.length).trim()
-+        readonly property string desc: ""
-+
-+        function onClicked(list: AppList): void {
-+            // 与 Clipboard.qml 同样的坑：不能 write() stdin、**必须先复制再关面板**
-+            // （应用是在启动器关闭、自己拿回焦点时才收到新 selection 的）。
-+            root.copyEmoji(glyph);
-+            closeTimer.target = list;
-+            closeTimer.restart();
-+        }
-+    }
-+
-+    // 复制完再关启动器（顺序原因见 Clipboard.qml 的注释）
-+    Timer {
-+        id: closeTimer
-+
-+        property var target: null
-+
-+        interval: 250
-+        onTriggered: {
-+            if (target)
-+                target.screenState.launcher = false;
-+        }
-+    }
-+
-+    // 外壳只写文件，挂选区交给 Hyprland（见 Clipboard.qml 注释 3）
-+    function copyEmoji(glyph: string): void {
-+        const tmp = `/tmp/caelestia-emoji-${Date.now()}`;
-+        const helper = `${tmp}.sh`;
-+        const cmd = [
-+            `printf '%s' "$1" > ${tmp}`,
-+            `printf '%s\\n' 'i=0; while [ ! -e ${tmp} ] && [ $i -lt 250 ]; do i=$((i+1)); sleep 0.02; done' 'wl-copy < ${tmp}' 'rm -f ${tmp} ${helper}' > ${helper}`,
-+            `SIG=\${HYPRLAND_INSTANCE_SIGNATURE:-$(ls -dt "$XDG_RUNTIME_DIR"/hypr/*/ 2>/dev/null | head -1 | xargs -r basename)}`,
-+            `HYPRLAND_INSTANCE_SIGNATURE=$SIG hyprctl dispatch "hl.dsp.exec_cmd(\\"sh ${helper}\\")"`
-+        ].join("\n");
-+        Quickshell.execDetached(["sh", "-c", cmd, "hermes", glyph]);
-+    }
-+
-+    Process {
-+        id: fetch
-+
-+        command: ["caelestia", "emoji"]
-+        stdout: StdioCollector {
-+            onStreamFinished: root.rawLines = text.split("\n").filter(line => line.trim() !== "")
-+        }
 +    }
 +}
