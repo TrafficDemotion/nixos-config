@@ -75,7 +75,7 @@ index 4231a26..aa1fcbf 100644
      }
  
 diff --git a/modules/launcher/AppList.qml b/modules/launcher/AppList.qml
-index 185a606..125f39d 100644
+index 185a606..3910bd9 100644
 --- a/modules/launcher/AppList.qml
 +++ b/modules/launcher/AppList.qml
 @@ -27,9 +27,13 @@ StyledListView {
@@ -118,7 +118,7 @@ index 185a606..125f39d 100644
      }
  
      spacing: Tokens.spacing.small
-@@ -84,9 +97,33 @@ StyledListView {
+@@ -84,9 +97,40 @@ StyledListView {
  
      state: screenState.launcher ? requestedState : displayState
  
@@ -130,8 +130,15 @@ index 185a606..125f39d 100644
 +        target: root.screenState
 +
 +        function onLauncherChanged(): void {
-+            if (root.screenState.launcher)
-+                Qt.callLater(root.resetScroll);
++            if (!root.screenState.launcher)
++                return;
++            // 每次打开都无条件重新拉数据（两个列表都很轻）。只靠 onStateChanged 不够：
++            // 反复用 Super+V 打开时 state/launcherMode 可能都没变化 → 不触发刷新 → 面板
++            // 停在旧快照（实测：刚复制的那条在最顶上却看不见，列表还停在更早的一批）。
++            // 这里不判断模式，直接两个都刷；判断模式反而会因为时序（state 绑定尚未重算）而漏掉。
++            Clipboard.reload();
++            Emojis.reload();
++            Qt.callLater(root.resetScroll);
 +        }
 +    }
 +
@@ -152,7 +159,7 @@ index 185a606..125f39d 100644
      }
  
      Component.onCompleted: displayText = search.text
-@@ -126,6 +163,20 @@ StyledListView {
+@@ -126,6 +170,20 @@ StyledListView {
              PropertyChanges {
                  root.delegate: variantItem
              }
@@ -173,7 +180,7 @@ index 185a606..125f39d 100644
          }
      ]
  
-@@ -287,6 +338,22 @@ StyledListView {
+@@ -287,6 +345,22 @@ StyledListView {
          }
      }
  
