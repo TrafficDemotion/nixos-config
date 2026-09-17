@@ -327,6 +327,24 @@ hl.window_rule({
   float = true,
 })
 
+-- 窗口记住「上次的尺寸」（2026-09-17 用户要求：关掉再开还是上次模样）。
+-- 用的是 Hyprland 原生的 window rule 效果 persistent_size（0.55 起有；wiki → Window Rules →
+-- Dynamic effects："For floating windows, internally store their size. When a new floating window
+-- opens with the same class and title, restore the saved size"）。
+-- 实现（`src/desktop/state/FloatState.cpp` 的 CFloatStateCache）：一张**内存里的**哈希表，
+-- 键 = (initialClass, initialTitle, xdgTag)，值 = 尺寸；窗口几何被计算时
+-- （`src/layout/target/WindowTarget.cpp:293`）如果命中就盖掉应用请求的尺寸。
+-- 边界（按上游源码，比 wiki 那句更准，别指望更多）：
+--   * **只记尺寸，不记位置** —— 位置仍由 Hyprland 每次自己决定（Wayland 客户端本来也不能指定位置）；
+--   * 那张表在内存里 ⇒ **重启 Hyprland / 重登会话就清空**，不是跨会话记忆；
+--   * 键里含 title ⇒ 标题会变的程序（浏览器按页面标题、终端按 cwd 或正在跑的程序）只有
+--     "标题一样的那次"才会命中；标题稳定的程序（neovide 带文件名、设置类小窗）命中率最高。
+hl.window_rule({
+  name = "persistent-size",
+  match = { class = ".*" },
+  persistent_size = true,
+})
+
 -- 忽略所有应用的最大化请求
 hl.window_rule({
   name = "suppress-maximize-events",
