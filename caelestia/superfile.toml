@@ -18,9 +18,13 @@
 # ⚠️ 渲染是纯文本替换，连【注释里的】占位符也会被换掉，说明里别写真的花括号。
 #
 # 为什么这么挑颜色（与 kitty / nvim 一套逻辑）：
-#   * 背景取 M3 的 surfaceContainer 一档（dark ≈ #1f201f），不用 surface（≈ #131413，
-#     接近纯黑、跟壁纸明暗无关）；侧栏/底栏用 surfaceContainerLow，弹窗用
-#     surfaceContainerHigh —— 两套模式下都是「离底色远一档」，不会在 light 下变成深色块。
+#   * 背景取 M3 的 surfaceContainerHighest 一档（dark #1f272b / light #dbe4ea），不用 surface
+#     （≈ #131413，接近纯黑、跟壁纸明暗无关）。2026-09-17 从这里再抬一档（旧值 surfaceContainer：
+#     dark #141a1e / light #e9eff3），因为用户要求「dark 亮一点、light 暗一点」—— 容器阶梯
+#     往上走同时做到这两件事（同一个名字在两种模式下共用一个档位，模板层没有条件判断）。
+#   * 侧栏/底栏用 surfaceContainerHigh（紧贴背景“远”一档：dark 更暗、light 更亮），
+#     弹窗用 surface1（Caelestia 自带的对称灰阶，surface 向 outline 混 29%：dark 更亮、
+#     light 更暗）—— 都比面板明显、却不跳色。
 #   * 选中项 / 按钮用 secondaryContainer、primaryContainer、errorContainer 这类【容器色】
 #     配 onXxxContainer：M3 的 secondary/primary 在 dark 是浅色、light 是深色，直接当底色
 #     会在浅色主题里变成深色块。
@@ -44,11 +48,12 @@ footer_border_active = "#{{ tertiary.hex }}"
 modal_border_active = "#{{ primary.hex }}"
 
 # ========= Background =========
-full_screen_bg = "#{{ surfaceContainer.hex }}"
-file_panel_bg = "#{{ surfaceContainer.hex }}"
-sidebar_bg = "#{{ surfaceContainerLow.hex }}"
-footer_bg = "#{{ surfaceContainerLow.hex }}"
-modal_bg = "#{{ surfaceContainerHigh.hex }}"
+# 2026-09-17：与 kitty / nvim 同一套（背景抬到容器阶梯最高一档 = dark 更亮 / light 更暗）。
+full_screen_bg = "#{{ surfaceContainerHighest.hex }}"
+file_panel_bg = "#{{ surfaceContainerHighest.hex }}"
+sidebar_bg = "#{{ surfaceContainerHigh.hex }}"
+footer_bg = "#{{ surfaceContainerHigh.hex }}"
+modal_bg = "#{{ surface1.hex }}"
 
 # ========= Foreground =========
 full_screen_fg = "#{{ onSurface.hex }}"

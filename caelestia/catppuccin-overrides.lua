@@ -39,11 +39,21 @@ return {
     overlay2 = "#{{ overlay2.hex }}",
     overlay1 = "#{{ overlay1.hex }}",
     overlay0 = "#{{ overlay0.hex }}",
-    surface2 = "#{{ surface2.hex }}",
-    surface1 = "#{{ surface1.hex }}",
-    surface0 = "#{{ surface0.hex }}",
-    base = "#{{ surfaceContainer.hex }}",      -- 背景：M3 tone12（原来的 base=tone6≈纯黑）
-    mantle = "#{{ surfaceContainerLow.hex }}", -- 侧栏/浮动窗口底（dark 下比背景暗、light 下比背景亮一档）
-    crust = "#{{ surfaceContainerLowest.hex }}", -- 容器最外一档（dark≈纯黑、light≈纯白）
+    -- surface0/1/2 = Caelestia 自带的「对称灰阶」（surface 向 outline 混 14% / 29% / 43%：
+    -- 越往后越靠近中间灰 —— dark 更亮、light 更暗，两套模式的幅度一样，这正是我们要的方向）。
+    -- 2026-09-17 背景抬了一档（见下面 base），这一组跟着抬一档：否则 base 会高过 surface0，
+    -- 补全菜单、各类浮层底色反而比编辑区更暗（原来 base 是最暗的那一档，才排得下这三级）。
+    surface2 = "#{{ overlay0.hex }}",
+    surface1 = "#{{ surface2.hex }}",
+    surface0 = "#{{ surface1.hex }}",
+    -- 背景：surfaceContainerHighest（dark #1f272b / light #dbe4ea）。
+    -- 原来是 surfaceContainer（tone12：dark #141a1e / light #e9eff3）。换到容器阶梯最高一档，
+    -- 是为了「dark 亮一点、light 暗一点」—— 阶梯往上走同时满足两者（同一个名字在两种模式下
+    -- 共用一个档位；模板层没有条件判断，只能这样挑）。实测 L*：dark 8.8 → 15.0、light 94.1 → 90.1。
+    -- 想再明显一档：换成 surface1（dark #292e31 / light #ccd1d4，±10 L*；那 surface0/1/2 还要再抬）。
+    -- 想退回原样：base/mantle/crust 各降一档，surface0/1/2 也降回去。
+    base = "#{{ surfaceContainerHighest.hex }}",
+    mantle = "#{{ surfaceContainerHigh.hex }}", -- 侧栏/状态行底：紧贴背景“远”一档（dark 更暗 / light 更亮）
+    crust = "#{{ surfaceContainer.hex }}",      -- 再远一档（旧方案里是最外圈的 surfaceContainerLowest）
   },
 }
