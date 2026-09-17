@@ -103,13 +103,17 @@ sudo git -C /etc/nixos push
 
 **加减插件**：改 `home.nix` 顶部的 `nvimPlugins` → `sudo nixos-rebuild switch --flake /etc/nixos#nixos`
 （只用 nixpkgs 里有的插件属性名；`nix eval …vimPlugins.<名字>.version` 可先确认有没有）。
+**nixpkgs 里没有的插件**：本地 vendored 一份包定义放 `pkgs/`（例：`pkgs/neominimap.nix`，
+用 `vimUtils.buildVimPlugin` + `fetchFromGitHub` 钉住上游 tag；hash 用
+`nix-prefetch-url --unpack …` + `nix hash convert --from nix32 --to sri` 拿，不用先跑一次失败 build），
+在 `nvimPlugins` 里用 `(pkgs.callPackage ./pkgs/<名字>.nix { })` 引进来。
 
 **验收手法（不用开窗口）**：
 
 ```bash
 # 插件全部注册 + 模块可 require + 无报错
 nvim --headless "+lua local n = 0 for _, p in pairs(require('lazy').plugins()) do n = n + 1 end io.write(n, '\n')" +qa
-nvim --headless "+lua for _, m in ipairs({'catppuccin','lualine','neo-tree','telescope','which-key','ibl','nvim-treesitter','nvim-autopairs'}) do io.write(m, '=', tostring(pcall(require, m)), '\n') end" +qa
+nvim --headless "+lua for _, m in ipairs({'catppuccin','lualine','neo-tree','telescope','which-key','ibl','nvim-treesitter','nvim-autopairs','neominimap'}) do io.write(m, '=', tostring(pcall(require, m)), '\n') end" +qa
 
 # autopairs 真的会补右半边：喂 i( 之后看 buffer（= () 就对了）
 nvim --headless /tmp/t.txt "+lua vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('i(<Esc>', true, false, true), 'mtx', false)" "+lua io.write(table.concat(vim.api.nvim_buf_get_lines(0,0,-1,false), '|'), '\n')" +qa
@@ -125,6 +129,35 @@ lazy 再按 spec 加载一遍（双重加载）。只想临时试新配置而不
 ```bash
 nvim -u /etc/nixos/nvim/init.lua --cmd 'set rtp^=/nix/store/<插件路径>'   # 插件走默认 packpath 时可用
 ```
+
+## 代码缩略图：neominimap（右侧 minimap，2026-09-17）
+
+上游 `Isrothy/neominimap.nvim`（MIT，v3.16.0）。**nixpkgs 与 nixpkgs-unstable 的 vimPlugins 里
+都没有**（只有老的 `minimap-vim`），所以包定义是本地 vendored 的 `pkgs/neominimap.nix`
+（`vimUtils.buildVimPlugin` + 钉住上游 tag），在 `home.nix` 的 `nvimPlugins` 里用
+`(pkgs.callPackage ./pkgs/neominimap.nix { })` 引入。
+
+- **配置写在 `nvim/init.lua` 的 `vim.g.neominimap`，位置在 `require("lazy").setup(...)` 之前。**
+  v3 起**没有 `setup()` 函数**（`require("neominimap")` 导出的全是已废弃的兼容壳），配置只能走
+  `vim.g.neominimap`；而它的 config 模块在第一次 `require` 时把这份表和内置默认做
+  `tbl_deep_extend("force", …)` 读一次 —— lazy 的 `setup()` 会同步加载所有 `lazy = false`
+  的插件（含 `plugin/neominimap.lua`，那里就读 config），所以表必须在 setup 之前就位。
+  本机只改了默认里的一项：`click = { enabled = true, auto_switch_focus = false }`（鼠标点缩略图
+  直接跳行，点完焦点仍留在代码窗口）。其余全用上游默认：`layout = "float"`、`minimap_width = 20`、
+  `treesitter.enabled`、`git.enabled`、`diagnostic.enabled`（本机没配 LSP，所以看不到诊断色块）。
+- **它画的是盲文点阵（U+2800–U+28FF），而 JetBrainsMono Nerd Font 没有这个区段**
+  （实测 `fc-list ":charset=2800"` 只命中 DejaVu Sans / DejaVu Serif / **FreeMono** / Unifont）。
+  所以两处都挂了回退字体 FreeMono（系统已装的 GNU FreeFont，不需要装新包）：
+  kitty = `home.nix` 的 `programs.kitty.settings.symbol_map = "U+2800-U+28FF FreeMono"`；
+  neovide = `guifont` 的逗号链（`nvim/init.lua`）+ `programs.neovide.settings.font.normal` 两处。
+  **不挂回退就是一排豆腐块。**
+- **float 布局会盖住窗口最右 20 列**，所以 `opt.sidescrolloff` 从 8 调到 **36**（上游文档对 float 布局
+  的建议值）：光标靠近右边时视图提前横向滚动，文字不会钻到缩略图底下。
+- 临时开关：`:Neominimap Toggle`（全局）/ `:Neominimap BufToggle`（当前文件）/ `WinToggle`（当前窗口）。
+  想常关：把 `vim.g.neominimap` 里加 `auto_enable = false`（或直接 `Toggle`）。
+- **验收**：`nvim --headless` 里 `require("neominimap.api").enabled()` 应为 `true`；
+  窗口形态要看屏幕 —— 用 `vim.fn.screenstring(row, col)` 把 nvim 自报的屏幕落盘（别用 pyte 回放），
+  右边缘应出现一列点阵字符 + 一条浮窗边框。
 
 ## 给 Caelestia 打补丁（已实施）
 

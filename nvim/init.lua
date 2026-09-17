@@ -26,7 +26,9 @@ opt.termguicolors = true
 opt.signcolumn = "yes"        -- 固定留出标记列，避免开关标记时整屏横向抖动
 opt.cursorline = true
 opt.scrolloff = 6
-opt.sidescrolloff = 8
+-- 横向最小留白：右侧的缩小地图（neominimap，float 布局、宽 20 列）会盖住窗口最后 20 列，
+-- 上游建议 float 布局下把它放大（默认 8），否则光标贴到右边时文字会钻到缩略图底下。
+opt.sidescrolloff = 36
 opt.splitright = true
 opt.splitbelow = true
 opt.wrap = false
@@ -65,6 +67,30 @@ vim.api.nvim_create_autocmd("FileType", {
 -- 关掉 netrw：目录浏览交给 neo-tree
 vim.g.loaded_netrw = 1
 vim.g.loaded_netrwPlugin = 1
+
+-- ── 代码缩略图：neominimap（右侧的 minimap）──────────────────────────────
+-- ⚠️ 这份配置必须写在下面 require("lazy").setup(...) 【之前】：
+--   插件读的是 `vim.g.neominimap`（v3 起没有 setup() 函数 —— require("neominimap")
+--   导出的全是已废弃的兼容壳），而且它的 config 模块只在第一次被 require 时
+--   `vim.tbl_deep_extend("force", internal, vim.g.neominimap)` 读一次；lazy 会在
+--   setup() 里同步加载所有 lazy = false 的插件（含 plugin/neominimap.lua，那里就读 config），
+--   那时候要能看见这张表。
+-- 插件本体：/etc/nixos/pkgs/neominimap.nix（nixpkgs 与 nixpkgs-unstable 里都没有，本地
+--   vendored 的 buildVimPlugin 包定义），由 home.nix 顶部的 nvimPlugins 清单经 lazy 加载。
+-- 渲染用【盲文点阵字符】U+2800–U+28FF（一个字符 = 2×4 个点），而 JetBrainsMono Nerd Font
+--   没有这个区段（实测 fc-list ":charset=2800" 不含它）→ 两处都挂了回退字体 FreeMono：
+--   kitty 侧 = home.nix 的 programs.kitty.settings.symbol_map；neovide 侧 = 上面 guifont 的逗号链。
+-- 布局 = 上游默认的 float：贴窗口右侧、宽 20 列、上下整条 ⇒ 顶部把 sidescrolloff 调到了 36
+--   （见那儿注释），否则光标贴右边时文字会钻到缩略图底下。
+vim.g.neominimap = {
+  -- 鼠标点缩略图直接跳到那一行（上游默认关）。auto_switch_focus = false =
+  -- 点完焦点仍留在代码窗口（上游默认 true 会把焦点切到缩略图上，多一步切回来）。
+  click = { enabled = true, auto_switch_focus = false },
+  -- 其余全用上游默认：auto_enable = true / layout = "float" / minimap_width = 20 /
+  -- treesitter.enabled = true（点阵按语法着色）/ git.enabled = true /
+  -- diagnostic.enabled = true（本机没配 LSP，所以暂时看不到诊断色块）。
+  -- 临时开关：:Neominimap Toggle（全局）/ :Neominimap BufToggle（当前文件）。
+}
 
 -- ── 插件管理：lazy.nvim ───────────────────────────────────────────────────
 -- 插件清单不写在这里，而是由 Nix 生成到 ~/.config/nvim/lua/nix-plugins.lua
@@ -133,8 +159,6 @@ local function apply_custom_hl(pal)
     end
   end
   set("WinSeparator", "surface2") -- 竖直边界线（以及 laststatus=3 下的 ┤├┼）
-  set("FloatBorder", "surface2") -- 浮窗边框（含左侧的 neo-tree 浮窗）
-  set("FloatTitle", "overlay0") -- 浮窗边框上那个标题（neo-tree 浮窗顶部那串字）
   set("MsgSeparator", "surface2") -- 命令行消息分隔条（默认 link 到 WinSeparator）
   set("NeoTreeWinSeparator", "surface2") -- neo-tree 侧栏自己那条边界线
   set("NeoTreeVertSplit", "surface2")
@@ -192,7 +216,10 @@ if vim.g.neovide then
   -- 所以这里显式写一份；home.nix 的 programs.neovide.settings.font 里那份是 nvim 连上之前
   -- 的首屏值，两边保持一致（改字号记得一起改）。:h10 = 10pt（2026-09-16 从 12 → 11 → 10，
   -- 与 kitty 的 10pt 对齐；还想更小就改这里的数字，支持小数，如 :h9.5）。
-  vim.o.guifont = "JetBrainsMono Nerd Font:h10"
+  -- 逗号 = neovide 的字体回退链（官方支持 Primary,Fallback1,...）：FreeMono 是给
+  -- 右侧缩略图（neominimap）用的 —— 它画的是盲文点阵 U+2800–U+28FF，JetBrainsMono
+  -- Nerd Font 里没有这个区段（实测 fc-list ":charset=2800" 不含它），不挂回退就是豆腐块。
+  vim.o.guifont = "JetBrainsMono Nerd Font,FreeMono:h10"
   -- 整体缩放（0.10.2 起支持）：不改变上面那份字体定义，只是把整个 GUI 乘一个系数。
   -- 屏幕是 2560x1440 / Hyprland scale 1.00，所以保持 1.0；觉得整体偏大偏小就 0.9 / 1.1，
   -- 运行时改这一行再 :source 本文件即生效（不用重启 neovide）。
@@ -258,15 +285,13 @@ map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "Close buffer" })
 map("n", "<leader>bo", "<cmd>BufferLineCloseOthers<cr>", { desc = "Close other buffers" })
 
 -- ── 文件浏览器：neo-tree（左侧树）─────────────────────────────────────────
--- 左侧栏的形态：true = 浮窗（自带四边框 + 标题，像 btop 的面板）/ false = 占位的侧栏
-local tree_float = true
-
+-- 形态：普通分栏侧栏（position 默认 "left"，宽度见下面 window）。占位、不盖代码。
+-- 2026-09-17 用户要求：回到刚装 neo-tree 时那个 split window 的样子 —— 之前那套
+-- 「左侧浮窗 + 跟随 winborder 的圆角四边框 + 标题嵌线」（提交 c038b06）整块撤掉，
+-- apply_custom_hl 里的 FloatBorder/FloatTitle 两行也一并去掉（浮窗边框回默认色）。
 require("neo-tree").setup({
   close_if_last_window = true,
-  -- 浮窗边框：空串 = 跟随 nvim 0.11+ 的 'winborder'（本文件顶部设的 "rounded"；
-  -- 取值 single/rounded/double/bold/solid/shadow），这样跟补全菜单、telescope 那些浮窗
-  -- 共用同一个设置。neo-tree 的默认值是 "NC"（不画边框），所以要显式写空串。
-  popup_border_style = "",
+  popup_border_style = "rounded",
   enable_git_status = true,
   filesystem = {
     filtered_items = { hide_dotfiles = false, hide_gitignored = false },
@@ -275,19 +300,7 @@ require("neo-tree").setup({
     -- 它在被劫持的目录 buffer 上会留下 E216（无害但脏），改用下面的 VimEnter 按需打开。
     hijack_netrw_behavior = "disabled",
   },
-  window = {
-    -- 左侧栏做成【浮窗】：不占位、盖在代码上，四边都是浮窗边框（圆角 —— 边框样式来自
-    -- 上面的 popup_border_style = "rounded"，取值就是 nvim 浮窗那套 border：
-    -- single/rounded/double/solid/shadow）。这是 nvim 里唯一能画出完整四边框的地方。
-    -- 想退回占位的侧栏：position = "left"（下面的 popup 段随即失效）。
-    position = tree_float and "float" or "left",
-    width = 34, -- 只在 position = "left"/"right" 时生效
-    popup = {
-      size = { width = 44, height = "90%" },
-      -- 百分比 = (可用空间 - 浮窗尺寸) 的占比："0%" 贴左上 / "50%" 居中 / "100%" 贴右下
-      position = { row = "50%", col = "0%" }, -- 垂直居中、水平贴左边缘
-    },
-  },
+  window = { width = 34 }, -- 左侧分栏宽度（占位，不浮在代码上）
   default_component_configs = {
     indent = { with_expanders = true },
   },
@@ -329,9 +342,7 @@ vim.api.nvim_create_autocmd("VimEnter", {
       end
     end
 
-    -- 浮窗形态下 `Neotree show` 不开窗（实测），要用 `Neotree float`
-    local verb = tree_float and "float" or "show"
-    vim.cmd(("Neotree %s dir=%s"):format(verb, vim.fn.fnameescape(dir)))
+    vim.cmd("Neotree show dir=" .. vim.fn.fnameescape(dir))
   end,
 })
 

@@ -19,6 +19,10 @@ let
     # 缩进对齐线（上游 lukas-reineke/indent-blankline.nvim，v3，模块名 ibl）；
     # 开关与颜色写在 nvim/init.lua 的 require("ibl").setup 与 apply_custom_hl 两处。
     indent-blankline-nvim
+    # 右侧代码缩略图（上游 Isrothy/neominimap.nvim）：nixpkgs（连 nixpkgs-unstable）里都没有
+    # 这个插件，所以用本地 vendored 的包定义 ./pkgs/neominimap.nix（buildVimPlugin + 钉住
+    # 上游 tag）。配置在 nvim/init.lua 的 vim.g.neominimap 那段（必须在 lazy.setup 之前设）。
+    (pkgs.callPackage ./pkgs/neominimap.nix { })
     # Treesitter 的解析器（语法高亮/结构化解析）。nvim 0.12 自带
     # c/lua/vim/vimdoc/query/markdown 的解析器，这里补常用语言。
     (nvim-treesitter.withPlugins (
@@ -384,6 +388,11 @@ in
       cursor_trail = 300;
       cursor_trail_decay = "0.15 0.6";
       cursor_trail_start_threshold = 1;
+      # 右侧缩略图（neominimap）画的是盲文点阵 U+2800–U+28FF，而 JetBrainsMono Nerd Font
+      # 里没有这个区段（实测 fc-list ":charset=2800" 只有 DejaVu Sans / DejaVu Serif /
+      # FreeMono / Unifont 这几族）→ 用 symbol_map 把这一段显式指给等宽的 FreeMono，
+      # 否则缩略图会是一排豆腐块。FreeMono 来自系统已装的 GNU FreeFont，不需要装新包。
+      symbol_map = "U+2800-U+28FF FreeMono";
       # 颜色全部来自 Caelestia 渲染出来的那份（链路见上面注释）。
       # 这里已不写任何颜色键，所以不用担心 include 之间的覆盖顺序。
       # kitty 会把 include 的路径做 ~ 展开；文件缺失时只记一条日志、不会报错停用配置。
@@ -412,8 +421,15 @@ in
       # 一份一模一样的 `vim.o.guifont = "JetBrainsMono Nerd Font:h10"`；这里这份是 nvim 连上
       # 之前用的首屏值（避免先闪一下默认字体）。改字号要两边一起改，或者只留 guifont 那份。
       # 2026-09-16：12pt → 11pt → 10pt（与 kitty 的 10pt 对齐）。
+      # 2026-09-17：加上第二项 FreeMono —— 逗号列表就是 neovide 的字体回退链
+      # （Primary, Fallback1…，见它文档 Configuration → Font），给右侧缩略图
+      # （neominimap）的盲文点阵 U+2800–U+28FF 兜底；与 nvim/init.lua 里那行
+      # guifont 保持一致（两处注释都写了，改的时候一起改）。
       font = {
-        normal = [ "JetBrainsMono Nerd Font" ];
+        normal = [
+          "JetBrainsMono Nerd Font"
+          "FreeMono"
+        ];
         size = 10.0;
       };
     };
