@@ -284,6 +284,42 @@ map("n", "<leader>bp", "<cmd>BufferLinePick<cr>", { desc = "Pick buffer" })
 map("n", "<leader>bd", "<cmd>bdelete<cr>", { desc = "Close buffer" })
 map("n", "<leader>bo", "<cmd>BufferLineCloseOthers<cr>", { desc = "Close other buffers" })
 
+-- ── 会话：resession.nvim（记住上次的 split 布局 / 打开的文件）────────────────
+-- 语义（2026-09-17 用户选定）：**只在「不带参数启动」时**自动恢复当前目录的会话，
+-- 带文件参数就照旧只开那个文件 + 左侧树，不会把整个会话顶上来。退出时自动保存。
+-- 这是上游 README「Create one session per directory」那一节的官方写法，逐字照搬三处：
+--   * `dir = "dirsession"` —— 自动会话与手动 :Session 保存的分开存，互不污染；
+--   * `StdinReadPre` 记 `using_stdin` —— `echo x | nvim` 这种不吃会话；
+--   * VimEnter 上 `nested = true`（恢复会话本身会开窗/触发别的 autocmd）。
+-- 存的东西 = nvim 自己的 :mksession（含 buffers、窗口布局与**窗口尺寸**、tabpages、
+-- 工作目录），落在 `~/.local/state/nvim/sessions/`。会话里有 neo-tree 那个 nofile 侧栏时，
+-- 靠 neo-tree 的 `auto_clean_after_session_restore = true`（见下面 neo-tree 那段）清掉。
+-- 注意顺序：这个 VimEnter 必须**先于**下面「打开左侧树」那个注册，恢复完窗口再拉树。
+local resession = require("resession")
+
+resession.setup({})
+
+vim.api.nvim_create_autocmd("StdinReadPre", {
+  callback = function()
+    vim.g.using_stdin = true
+  end,
+})
+
+vim.api.nvim_create_autocmd("VimEnter", {
+  nested = true,
+  callback = function()
+    if vim.fn.argc(-1) == 0 and not vim.g.using_stdin then
+      resession.load(vim.fn.getcwd(), { dir = "dirsession", silence_errors = true })
+    end
+  end,
+})
+
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  callback = function()
+    resession.save(vim.fn.getcwd(), { dir = "dirsession", notify = false })
+  end,
+})
+
 -- ── 左侧树宽度：记住上次的值 ────────────────────────────────────────────────
 -- 上游没有任何持久化开关：neo-tree 的 `window` 只有 position/width/height/auto_expand_width/popup
 -- （`lua/neo-tree/defaults.lua`，全仓库搜 persist/remember 无命中；它只在**本次会话内**把用户拖过的
@@ -320,6 +356,9 @@ local saved_tree_width = read_saved_neotree_width() or 34
 -- apply_custom_hl 里的 FloatBorder/FloatTitle 两行也一并去掉（浮窗边框回默认色）。
 require("neo-tree").setup({
   close_if_last_window = true,
+  -- 会话恢复时把会话文件里那份「坏的」neo-tree 缓冲区清掉（nofile 侧栏会被 :mksession
+  -- 原样记进会话，恢复出来是个不能用的树）。上面 resession 那段会恢复会话，所以打开它。
+  auto_clean_after_session_restore = true,
   popup_border_style = "rounded",
   enable_git_status = true,
   filesystem = {

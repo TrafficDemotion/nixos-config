@@ -19,6 +19,11 @@ let
     # 缩进对齐线（上游 lukas-reineke/indent-blankline.nvim，v3，模块名 ibl）；
     # 开关与颜色写在 nvim/init.lua 的 require("ibl").setup 与 apply_custom_hl 两处。
     indent-blankline-nvim
+    # 会话记忆（上游 resession.nvim）：记住「每次打开时的 split 布局」。
+    # 选它而不是 auto-session：resession 是显式 API，我们要的语义是
+    # 「不带参数启动才自动恢复当前目录的会话；带文件参数就照旧只开那个文件 + 树」，
+    # 见 nvim/init.lua 里 resession 那一段。插件本体仍来自 nixpkgs，不下载不更新。
+    resession-nvim
     # 右侧代码缩略图（上游 Isrothy/neominimap.nvim）：nixpkgs（连 nixpkgs-unstable）里都没有
     # 这个插件，所以用本地 vendored 的包定义 ./pkgs/neominimap.nix（buildVimPlugin + 钉住
     # 上游 tag）。配置在 nvim/init.lua 的 vim.g.neominimap 那段（必须在 lazy.setup 之前设）。
