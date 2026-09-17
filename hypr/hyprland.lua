@@ -373,13 +373,18 @@ hl.window_rule({
   float = true,
 })
 
--- neovide 的窗口尺寸交给合成器管（2026-09-16）。原因：neovide 0.16.2 自己那两条路在这台机上都不行
+-- neovide 的窗口尺寸：**交给上面的 persistent_size 记忆**（2026-09-17 改；原来这里固定 size = "1600 1000"）。
+-- 起因：从 yazi 里 Enter 打开的 neovide 不记住尺寸。A/B 实测根因不是记忆没生效，而是静态 size 规则
+--   **会压过 persistent_size**：eval 追加一条更靠后的 1200x800 规则 → 开成 1200x800 并且关窗时入了记忆表；
+--   再 `hyprctl reload` 清掉 eval 规则（本条的 1600x1000 回来）→ 重开又变回 1600x1000（连开两次同样）。
+--   ⇒ **尺寸规则和尺寸记忆不能并存**，所以这里把 size 整个去掉，让记忆说了算。
+-- 其它背景（2026-09-16 记下的，仍然成立）：neovide 0.16.2 自己那两条路在这台机上都不行 ——
 --   * `--size` / config.toml 的 size：只在窗口映射前 request_inner_size 一次，Wayland 下被忽略
 --     （实测 --size 400x300 照样开成 800x600，1600x1000 也一样）；
 --   * `--grid`：参数组有冲突 bug，一用就报 "cannot be used with '--size'" 直接退出。
--- 所以尺寸写在 Hyprland 规则里；位置由 Hyprland 自己居中，不用额外给。
-hl.window_rule({
-  name = "neovide-size",
-  match = { class = "^neovide$" },
-  size = "1600 1000",
-})
+-- 现在没有任何尺寸规则：第一次开由 neovide 自己请求（`~/.local/share/neovide/neovide-settings.json`
+-- 里存着它自己的 grid_size），之后你手动调成什么尺寸、关掉再开就是什么尺寸。neovide 的窗口标题恒为
+-- "[No Name]"（不含文件名），所以记忆的键对所有文件是同一个 —— 换文件打开也照样回到你上次的尺寸。
+-- 想退回固定尺寸：加一条 `hl.window_rule({ name = "neovide-size", match = { class = "^neovide$" },
+-- size = "1600 1000" })` —— 但那样记忆会再次失效（有尺寸规则时尺寸规则赢）。
+-- （这条规则本身已经删掉了：它现在没有任何 effect，留着只是噪音。）
