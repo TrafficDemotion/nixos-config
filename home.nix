@@ -126,6 +126,10 @@ in
             #        窗口，而是以 clipboard / emoji 模式打开启动器（数据仍来自
             #        cliphist 与 `caelestia emoji`）。
             ./patches/caelestia/0013-launcher-clipboard-emoji.patch
+            #   0014 剪贴板面板顺序（接 0013）：Quickshell 的 Variants 只按「值第一次出现」排序，
+            #        模型里新出现的值一律追加到末尾，所以「再复制一次某条」会把那条顶到列表最
+            #        底部。这里按 cliphist list 的原始顺序重排 instances（原因见补丁内注释）。
+            ./patches/caelestia/0014-launcher-clipboard-order.patch
           ];
       });
 

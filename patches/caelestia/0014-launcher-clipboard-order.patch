@@ -1,0 +1,32 @@
+diff --git a/modules/launcher/services/Clipboard.qml b/modules/launcher/services/Clipboard.qml
+--- a/modules/launcher/services/Clipboard.qml
++++ b/modules/launcher/services/Clipboard.qml
+@@ -51,7 +51,27 @@
+         return `image/${ext === "jpg" ? "jpeg" : ext}`;
+     }
+ 
+-    list: entries.instances
++    // ⚠️ 顺序陷阱（2026-09-17 定案）：Quickshell 的 Variants 按「值第一次出现」的顺序保存实例，
++    // 模型里**新出现的值只会追加到末尾**，已在集合里的值原地不动 —— upstream
++    // src/core/variants.cpp 的 updateVariants()/AwfulMap 就是插入序数组，注释原文
++    // "extremely inefficient map"。于是「再复制一次某条」→ cliphist 给它一个新 id = 模型里的
++    // 新值 → 它被追加到列表**最底部**（用户报的「粘贴/复制后的条目在最底部」），
++    // 而不是按 cliphist list 的顺序（新→旧）排在最上面。
++    // 修法：把 instances 按 rawLines（= cliphist list 的原始顺序）重排后再交给 Searcher。
++    // 隔离验证：模型 [A,B,C] → [D,B,C,A] 时 instances 顺序是 [A,B,C,D]，重排后为 [D,B,C,A]。
++    list: {
++        const byLine = new Map();
++        for (const inst of entries.instances)
++            byLine.set(inst.modelData, inst);
++
++        const ordered = [];
++        for (const line of rawLines) {
++            const inst = byLine.get(line);
++            if (inst !== undefined)
++                ordered.push(inst);
++        }
++        return ordered;
++    }
+     useFuzzy: true
+     keys: ["name"]
+     weights: [1]
