@@ -190,6 +190,7 @@ programs.caelestia.package =
 | `0006-ui-sounds-drawers-wheel.patch` | `modules/drawers/Interactions.qml`、`modules/bar/popouts/PopoutState.qml`、`services/UiSounds.qml` | 抽屉整层滚轮不再空响（只在鼠标确实在竖栏上滚时出声）；popout 收起补一声 |
 | `0007-lock-minimal-fade.patch` | `modules/lock/{Content,Center,LockSurface}.qml` | 锁屏只留密码框（删掉三栏内容与那个大面板、贴屏幕底部）+ 上锁/解锁只做淡入淡出（见下面「锁屏精简」一节） |
 | `0008-lock-no-password-hint.patch` | `modules/lock/center/InputField.qml` | 锁屏密码框不再显示常驻提示 `Enter your password`（**只去显示、保留量宽** → 空态胶囊宽度不变；`Loading…`/`Scanning face…` 这类瞬时提示照旧显示） |
+| `0014-launcher-clipboard-order.patch` | `modules/launcher/services/Clipboard.qml` | 剪贴板面板顺序：把 `Variants.instances` 按 `cliphist list` 的原序（新→旧）重排 —— 修「粘贴/复制后的条目在最底部」（原因见下面「剪贴板面板的顺序」一节） |
 
 **验收手法（都不依赖肉眼看屏幕）**：
 
@@ -234,6 +235,44 @@ sudo nixos-rebuild switch --flake /etc/nixos#nixos
 **加新补丁的标准动作**：在 `patches/caelestia/` 放一张 `git diff` 风格的补丁（`-p1` 可应用，
 路径形如 `a/services/…`），追加到 `home.nix` 的 `patches` 列表里 → `sudo git -C /etc/nixos add -A`
 （**不做这步 nix 看不到文件**）→ `nixos-rebuild build` 验证 → `switch`。
+
+
+### 剪贴板面板的顺序：`Variants` 只追加、不重排（`patches/caelestia/0014-launcher-clipboard-order.patch`）
+
+0013 用 Quickshell 内建的 `Variants` 把 `cliphist list` 的每一行实例化成 QtObject（`list: entries.instances`）。
+`Variants` 的实例集合是**按「值第一次出现」的顺序**保存的插入序数组，模型里**新出现的值只会追加到末尾**，
+已在集合里的值原地不动 —— upstream `src/core/variants.cpp` 的 `updateVariants()` / `AwfulMap`
+（注释原文 “extremely inefficient map”）：
+
+- 每个**新值**（新内容，或被重复制后 `cliphist` 换了 id 的那条 = 新字符串）追加到 `mInstances` 末尾；
+- 集合里已有的值保持原位；只有从模型里消失的值才被删掉。
+
+后果：**再复制一次某条 → 它跑到列表最底部**（用户报的「粘贴/复制后的条目在最底部」；条目从启动器里点一次、
+`cliphist` 去重给它新 id 时最典型）。0013/1db37ae 当时按「快照没刷新」+「滚动没复位」两条去修，
+修不到这个点（那两条改动本身无害，保留）。
+
+0014 的做法：`list` 不再直接取 `instances`，而是按 `rawLines`（`cliphist list` 的原始顺序）重排：
+
+```qml
+list: {
+    const byLine = new Map();
+    for (const inst of entries.instances)
+        byLine.set(inst.modelData, inst);
+
+    const ordered = [];
+    for (const line of rawLines) {
+        const inst = byLine.get(line);
+        if (inst !== undefined)
+            ordered.push(inst);
+    }
+    return ordered;
+}
+```
+
+**隔离复现（不用真机，几秒钟）**：`qs -p` 跑一个探针，模型 `[A,B,C]` → 改成 `[D,B,C,A]`，打印 `instances`
+顺序 —— 会得到 `[A,B,C,D]`（D 被追加到末尾），而按模型重排后是 `[D,B,C,A]`。补丁里那段就是先这样验证再落地的
+（真机那次实测：`cliphist decode 129 | wl-copy` 把旧条目「Neominimap」顶到 142 → 面板第 1 行就是它，
+截图 `~/notes/clipboard-0014-order-fixed.png`）。
 
 ## UI 交互音效（全部由外壳 QML 补丁负责，Lua 只剩两条）
 
