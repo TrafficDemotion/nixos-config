@@ -17,11 +17,16 @@ hl.monitor({
 })
 
 -- 核显 HDMI-A-1：那份「软件假负载」EDID 对应的输出（插上真显示器就是它）。
--- 模式和刷新率都不写死，用 EDID 的首选模式 2560x1440@60，这样插上真显示器时
--- 还能自己改成 144/180Hz；scale 必须写死 1，否则 auto 会按 DPI 猜出非 1 的缩放。
+-- 刷新率必须写死：**首选时序 ≠ 最高刷新率** —— 这份 AOC Q24G50F 的 EDID 把
+-- 2560x1440@60 放在第一个 DTD（首选），144Hz 那条在 CEA 扩展块里（范围描述符 48–144Hz），
+-- 所以 mode = "preferred" 永远只会拿到 60Hz。写死 144 有两个理由：
+--   ① 面板本身就吃 144；② Moonlight 客户端设的是 1080p@120fps，放 60Hz 上等于砍一半。
+-- scale 必须写死 1，否则 auto 会按 DPI 猜出非 1 的缩放。
+-- 换屏/换线后若这条模式不在 EDID 的模式列表里，Hyprland 会报 Invalid mode 并忽略该规则
+-- （退回自动选择）；那时把这里改成该 EDID 支持的值，或干脆写回 mode = "preferred"。
 hl.monitor({
   output = "HDMI-A-1",
-  mode = "preferred",
+  mode = "2560x1440@144",
   position = "auto",
   scale = 1,
 })
