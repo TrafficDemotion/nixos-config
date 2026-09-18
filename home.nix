@@ -135,6 +135,17 @@ in
             #        模型里新出现的值一律追加到末尾，所以「再复制一次某条」会把那条顶到列表最
             #        底部。这里按 cliphist list 的原始顺序重排 instances（原因见补丁内注释）。
             ./patches/caelestia/0014-launcher-clipboard-order.patch
+            #   0015 Nexus 设置界面：删掉 Panels / Apps / Services / Language & region 四页的
+            #        导航项与对应组件 —— 这四页编辑的全是 shell.json 的键（bar/dashboard/
+            #        launcher/sidebar/utilities、general.apps、services.*、nexus.*），而本机
+            #        shell.json 由 HM 托管成只读软链，在这四页里改东西只会弹 Failed to save
+            #        config。两个数组（PageRegistry.pages / PageCompRegistry.pageComps）按下标
+            #        一一对应，必须同删；删的是下标 6..9，0..3 不动（bar popout 的映射依赖它）。
+            ./patches/caelestia/0015-nexus-hide-shell-pages.patch
+            #   0016 Nexus 设置界面：删掉 NavPane 上那个「Search settings」搜索框 ——
+            #        上游没实现设置搜索，它只写 NexusState.searchOpen 而那个属性全外壳
+            #        没有消费者，输入什么都不会发生。
+            ./patches/caelestia/0016-nexus-no-search-bar.patch
           ];
       });
 

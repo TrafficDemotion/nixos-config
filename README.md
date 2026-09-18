@@ -191,6 +191,21 @@ programs.caelestia.package =
 | `0007-lock-minimal-fade.patch` | `modules/lock/{Content,Center,LockSurface}.qml` | 锁屏只留密码框（删掉三栏内容与那个大面板、贴屏幕底部）+ 上锁/解锁只做淡入淡出（见下面「锁屏精简」一节） |
 | `0008-lock-no-password-hint.patch` | `modules/lock/center/InputField.qml` | 锁屏密码框不再显示常驻提示 `Enter your password`（**只去显示、保留量宽** → 空态胶囊宽度不变；`Loading…`/`Scanning face…` 这类瞬时提示照旧显示） |
 | `0014-launcher-clipboard-order.patch` | `modules/launcher/services/Clipboard.qml` | 剪贴板面板顺序：把 `Variants.instances` 按 `cliphist list` 的原序（新→旧）重排 —— 修「粘贴/复制后的条目在最底部」（原因见下面「剪贴板面板的顺序」一节） |
+| `0015-nexus-hide-shell-pages.patch` | `modules/nexus/{PageRegistry,PageCompRegistry}.qml` | 设置里删掉 **Panels / Apps / Services / Language & region** 四页的导航项与对应组件 |
+| `0016-nexus-no-search-bar.patch` | `modules/nexus/NavPane.qml` | 删掉设置页左栏那个没实现的「Search settings」搜索框 |
+
+> **为什么这四页要去掉**：它们编辑的全是 `shell.json` 的键（`bar/dashboard/launcher/sidebar/utilities`、
+> `general.apps`、`services.*`、`nexus.*`），而本机 `shell.json` 由 HM 托管成指向 `/nix/store` 的只读软链
+> → 在这四页里改任何东西都只会弹 `Failed to save config`，留在界面上纯属误导。
+> **上游没有隐藏页面的开关**：`plugin/src/Caelestia/Config/nexusconfig.hpp` 只有 `wallpapersPerRow` /
+> `maxNetworksShown` / `networkRescanInterval`（main 分支同样如此，`PageRegistry.qml` 最后一次改动是
+> 2026-09-07 的 i18n 提交），导航项来自硬编码单例 `PageRegistry.pages`，页面本体在
+> `PageCompRegistry.pageComps` 里**按下标一一对应**（`currentPageIdx = index`），所以只能删数组项、且必须同删。
+> 删掉的是下标 6..9，0..3 不动 —— `modules/bar/popouts/Wrapper.qml` 里那份
+> `["appearance","network","bluetooth","audio"].indexOf(mode)` → 0..3 的硬编码映射依赖它们。
+> 同理那个搜索框：它只把 `NexusState.searchOpen` 写成一个布尔值，而该属性全外壳**没有消费者**
+> （`grep -rn searchOpen` 只有 NavPane 的 `Binding` 与 NexusState 的声明两处），输入什么都不会发生。
+> **想恢复**：把补丁里 `-` 的行放回原处再 `nixos-rebuild switch`（只改 QML，约 20s，不编 C++）。
 
 **验收手法（都不依赖肉眼看屏幕）**：
 

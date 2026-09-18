@@ -1,0 +1,144 @@
+Nexus：把 Panels / Apps / Services / Language & region 四页从设置界面去掉
+
+这四页编辑的全是 shell.json 的键（bar/dashboard/launcher/sidebar/utilities、
+general.apps、services.*、nexus.*），而本机 shell.json 由 home-manager 托管成指向
+/nix/store 的只读软链 —— 在这四页里改任何东西都只会弹「Failed to save config」。
+上游没有任何「隐藏页面」的配置项（plugin/src/Caelestia/Config/nexusconfig.hpp 只有
+wallpapersPerRow / maxNetworksShown / networkRescanInterval），上游 main 也一样，所以
+只能把导航项本身删掉。
+
+⚠️ PageRegistry.pages 与 PageCompRegistry.pageComps 是两个**按下标一一对应**的硬编码
+数组（导航项靠 nState.currentPageIdx = index 打开 pageComps[index]），必须同删、同数量，
+否则点一个导航项会打开另一个页面。这里删的是下标 6..9；下标 0..3 保持不动 ——
+modules/bar/popouts/Wrapper.qml 里那份
+["appearance","network","bluetooth","audio"].indexOf(mode) → 0..3 的硬编码映射依赖它们。
+
+--- a/modules/nexus/PageRegistry.qml
++++ b/modules/nexus/PageRegistry.qml
+@@ -58,30 +58,12 @@
+         },
+ 
+         // Shell
+-        {
+-            label: Tr.tr("Panels"),
+-            icon: "dock_to_bottom",
+-            description: Tr.tr("Dashboard, taskbar, launcher, sidebar"),
+-            category: "shell"
+-        },
+-        {
+-            label: Tr.tr("Apps"),
+-            icon: "apps",
+-            description: Tr.tr("Default apps, favourites, hidden apps"),
+-            category: "shell"
+-        },
+-        {
+-            label: Tr.tr("Services"),
+-            icon: "build",
+-            description: Tr.tr("Poll intervals, lyrics backend"),
+-            category: "shell"
+-        },
+-        {
+-            label: Tr.tr("Language & region"),
+-            icon: "globe",
+-            description: Tr.tr("UI language, weather location, display units"),
+-            category: "shell"
+-        },
++        // ⚠️ 本地补丁（patches/caelestia/0015-nexus-hide-shell-pages.patch）：
++        // Panels / Apps / Services / Language & region 四页已从导航里删掉 —— 它们编辑的
++        // 全是 shell.json 的键（bar/dashboard/launcher/sidebar/utilities、general.apps、
++        // services.*、nexus.*），而本机 shell.json 由 home-manager 托管成指向 /nix/store 的
++        // 只读软链，在这四页里改任何东西都只会弹 「Failed to save config」。
++        // ⚠️ 页面本体在 PageCompRegistry.pageComps 里是**同下标**的：本文件删几项，那边必须删同样几项。
+ 
+         // About
+         {
+--- a/modules/nexus/PageCompRegistry.qml
++++ b/modules/nexus/PageCompRegistry.qml
+@@ -102,79 +102,14 @@
+         },
+ 
+         // Shell
+-        Component {
+-            // Panels
+-            StackPage {
+-                Component {
+-                    PanelsPage {}
+-                }
+-                Component {
+-                    DashboardPanel {}
+-                }
+-                Component {
+-                    TaskbarPanel {}
+-                }
+-                Component {
+-                    LauncherPanel {}
+-                }
+-                Component {
+-                    SidebarPanel {}
+-                }
+-                Component {
+-                    UtilitiesPanel {}
+-                }
+-
+-                // Taskbar component sub-pages
+-                Component {
+-                    BarWorkspaces {}
+-                }
+-                Component {
+-                    BarActiveWindow {}
+-                }
+-                Component {
+-                    BarTray {}
+-                }
+-                Component {
+-                    BarStatusIcons {}
+-                }
+-                Component {
+-                    BarClock {}
+-                }
+-            }
+-        },
+-        Component {
+-            // Apps
+-            StackPage {
+-                Component {
+-                    AppsPage {}
+-                }
+-                Component {
+-                    AllApps {}
+-                }
+-                Component {
+-                    AppInfo {}
+-                }
+-            }
+-        },
+-        Component {
+-            // Services
+-            StackPage {
+-                Component {
+-                    ServicesPage {}
+-                }
+-                Component {
+-                    NotificationsPage {}
+-                }
+-            }
+-        },
+-        Component {
+-            // Language & region
+-            StackPage {
+-                Component {
+-                    LanguageAndRegion {}
+-                }
+-            }
+-        },
++        // ⚠️ 本地补丁（patches/caelestia/0015-nexus-hide-shell-pages.patch）：
++        // Panels / Apps / Services / Language & region 四页的组件已删掉，必须与
++        // PageRegistry.pages 里删掉的那四项**同下标、同数量**，否则导航项会点开别的页面。
++        // 上面那几个 `import qs.modules.nexus.pages.{panels,apps,services}` 留着不动：
++        // 它们只声明目录、没有副作用，删掉会让补丁更大。
++        // 下标 0..3（Wallpaper & style / Network / Connected devices / Audio）保持不变 ——
++        // modules/bar/popouts/Wrapper.qml 里 `["appearance","network","bluetooth","audio"].indexOf(mode)`
++        // 那份硬编码映射依赖它们。
+ 
+         // About
+         Component {

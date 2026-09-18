@@ -1,0 +1,49 @@
+Nexus：删掉 NavPane 上那个没有实现的「Search settings」搜索框
+
+上游没实现设置搜索：那个 SearchBar 只通过 Binding 往 NexusState.searchOpen 写一个
+布尔值，而 searchOpen 在全外壳**没有任何消费者**（grep 只有 NavPane 的 Binding 与
+NexusState 的声明两处；页面列表 NavLocations 的 model 就是 PageRegistry.pages 原样，
+不过滤），所以输入什么都不会发生。删掉它，NavLocations 自己填满整列。
+
+想恢复：把上面那段注释换成原来的 SearchBar 块（本 diff 的 `-` 行即原文）。
+
+--- a/modules/nexus/NavPane.qml
++++ b/modules/nexus/NavPane.qml
+@@ -15,31 +15,12 @@
+ 
+     spacing: Tokens.spacing.large
+ 
+-    SearchBar {
+-        id: searchField
+-
+-        Layout.fillWidth: true
+-
+-        placeholderText: Tr.tr("Search settings")
+-        font: Tokens.font.body.large
+-
+-        bg.color: Colours.tPalette.m3surfaceContainerLowest
+-        bg.border.color: Colours.palette.m3outlineVariant
+-        searchIcon.fontStyle: Tokens.font.icon.medium
+-        searchIcon.anchors.leftMargin: Tokens.padding.largeIncreased
+-        clearIcon.font: Tokens.font.icon.medium
+-        clearIcon.padding: Tokens.padding.extraSmall
+-
+-        Behavior on bg.border.color {
+-            CAnim {}
+-        }
+-
+-        Binding {
+-            target: root.nState
+-            property: "searchOpen"
+-            value: searchField.text.length > 0
+-        }
+-    }
++    // ⚠️ 本地补丁（patches/caelestia/0016-nexus-no-search-bar.patch）：
++    // 这里的 SearchBar（「Search settings」）已删掉 —— 上游没有实现搜索，它只往
++    // NexusState.searchOpen 写一个布尔值，而那个属性全外壳没有任何消费者
++    // （grep searchOpen 只有 NavPane 的 Binding 与 NexusState 的声明两处），
++    // 所以输入框按下去什么都不会发生，留着纯属误导。
++    // 若哪天上游补上搜索，把这段换成原来那个 SearchBar 块即可（见该补丁的 diff）。
+ 
+     NavLocations {
+         Layout.fillWidth: true
