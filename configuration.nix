@@ -480,6 +480,7 @@
     lazydocker
     fastfetch
     # 媒体 / 图形
+    mpv # 播放器（VA-API / QSV 硬解栈在上面的 hardware.graphics，2026-09-18 加）
     ffmpeg
     exiftool
     yt-dlp
