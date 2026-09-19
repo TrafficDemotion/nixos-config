@@ -877,6 +877,13 @@ in
         # http://192.168.2.120:30433、PVE 8006、OpenClash 面板 9090/3000…）全是明文 HTTP，
         # 被升级后只会拿到 SSL_ERROR_RX_RECORD_TOO_LONG。关掉「升级本地地址」，公网照旧保护。
         "dom.security.https_only_mode.upgrade_local" = false;
+        # 2026-09-19 Web Push：LibreWolf 的硬化默认把 dom.push.connection.enabled 关掉（只留
+        # 页面开着时的 SSE/WS），所以 ntfy 这类站点勾不了「后台通知」。打开推送传输层后，
+        # 「浏览器在跑、标签页在后台/窗口最小化」也能收到系统通知；完全退出浏览器时消息会
+        # 留在 Mozilla autopush（TTL 内），下次启动 LibreWolf 才弹 —— 桌面端没有系统级推送
+        # 守护进程，这点和手机 App 不同。前提：能连 updates.push.services.mozilla.com。
+        "dom.push.enabled" = true;            # 本来就是默认值，显式写出来免得被硬化配置改掉
+        "dom.push.connection.enabled" = true; # ← 关键：LibreWolf 默认 false，推送连接就靠它
         "intl.locale.requested" = "en-US,zh-CN";
         "font.name.sans-serif.zh-CN" = "JetBrainsMono Nerd Font Propo";
         "font.size.variable.x-western" = 14;
