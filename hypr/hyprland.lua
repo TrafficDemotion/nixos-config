@@ -224,12 +224,11 @@ hl.bind(mainMod .. " + N", hl.dsp.global("caelestia:sidebar")) -- 侧边栏
 hl.bind("CTRL + ALT + Delete", hl.dsp.global("caelestia:session")) -- 电源菜单
 hl.bind("CTRL + ALT + C", hl.dsp.global("caelestia:clearNotifs"), { locked = true })
 
--- vim 风的字母键位（h/j/k/l）全部停用（2026-09-16 用户要求）。
--- 现状：h、j 本来就没有绑定；k（仪表盘）与 l（锁屏）这两条按他要求一并去掉。
--- 仪表盘、锁屏都还有鼠标入口：竖栏右下的电源图标 / 会话菜单、单按 Win 的启动器。
--- 恢复办法：把下面两行前面的 `-- ` 去掉。
--- hl.bind(mainMod .. " + K", hl.dsp.global("caelestia:showall")) -- 仪表盘（显示所有面板）
--- hl.bind(mainMod .. " + L", hl.dsp.global("caelestia:lock")) -- 锁屏（Caelestia 内置，背景已改壁纸；解锁没有事件可挂）
+-- vim 风的字母键位：h、j 本来就没有绑定；k（仪表盘）2026-09-16 停用，l（锁屏）2026-09-21
+-- 按用户要求恢复（他习惯按 SUPER+L 锁屏）。仪表盘仍有鼠标入口：竖栏右下的电源图标 /
+-- 会话菜单、单按 Win 的启动器；想恢复 k 就把那行前面的 `-- ` 去掉。
+-- hl.bind(mainMod .. " + K", hl.dsp.global("caelestia:showall")) -- 仪表盘（显示所有面板，已停用）
+hl.bind(mainMod .. " + L", hl.dsp.global("caelestia:lock")) -- 锁屏（Caelestia 内置，背景已改壁纸；解锁没有事件可挂）
 
 -- 应用
 hl.bind(mainMod .. " + T", hl.dsp.exec_cmd(terminal))
