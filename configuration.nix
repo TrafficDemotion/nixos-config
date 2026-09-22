@@ -122,6 +122,39 @@
   networking.networkmanager.enable = true;
   # 不要再开 networking.wireless：那是 wpa_supplicant 直管，和 NetworkManager 抢网卡
 
+  # ════════════════════ Waydroid（Android 容器）════════════════════
+  # 用 NixOS 官方模块（nixos/modules/virtualisation/waydroid.nix），不引第三方 flake。
+  # 模块负责的部分：装 waydroid 包 + 启 waydroid-container.service（D-Bus 的
+  # id.waydro.Container）、virtualisation.lxc.enable、把 waydroid0 加进防火墙信任
+  # 接口、写 /etc/gbinder.d/waydroid.conf、加 psi=1 内核参数。
+  #
+  # 内核侧这台机器已经就绪，**不需要额外内核模块**（模块本身也不会去 modprobe
+  # binder_linux）：NixOS 自带内核 CONFIG_ANDROID_BINDER_IPC=y +
+  # CONFIG_ANDROID_BINDERFS=y —— binder 是内建的，系统里没有 binder_linux 这个
+  # 模块，/proc/filesystems 里就有 `binder`，waydroid 自己 mount -t binder 到
+  # /dev/binderfs、创建 anbox-binder{,-vndbinder,-hwbinder} 再软链到 /dev/。
+  # 其余前置条件实测都已满足：CONFIG_MEMFD_CREATE=y（不需要 ashmem）、
+  # /dev/dri/card0 与 renderD128 存在、cgroup2、user namespace 可用。
+  #
+  # 镜像不进 Nix 声明：首次必须跑一次 `sudo waydroid init`（从 ota.waydro.id 拉
+  # lineage-20 VANILLA system ~840 MB + MAINLINE vendor ~180 MB，解到
+  # /var/lib/waydroid/），属运行期状态，和 ~/.local/state 那类一样不随回滚。
+  virtualisation.waydroid.enable = true;
+
+  # ⚠️ 必须显式指定 nft 版包：NixOS 自带内核**没有编 legacy iptables**
+  # （ip_tables / iptable_nat / iptable_filter 这些模块一个都不存在），而
+  # waydroid 的 waydroid-net.sh 会**优先挑 PATH 里的 `iptables-legacy`**
+  # （上游脚本第 35 行 `IPTABLES_BIN="$(command -v iptables-legacy)"`），
+  # nixpkgs 的 iptables 包恰好把它注入进 PATH —— 结果是启动 session 时
+  # `iptables v1.8.13 (legacy): can't initialize iptables table 'filter':
+  # Table does not exist (do you need to insmod?)` → `Failed to setup waydroid-net.`
+  # → session 起不来、waydroid0 网桥建不出来。
+  # nixpkgs 的选包判据是 config.networking.nftables.enable（本机 false，于是默认给了
+  # iptables 版），但本机防火墙链路实际早就走 nf_tables（`iptables -V` = nf_tables），
+  # 所以这里直接换掉：waydroid-nftables 就是官方
+  # `waydroid.override { withNftables = true }`（build 时 USE_NFTABLES=1，脚本改用 nft）。
+  virtualisation.waydroid.package = pkgs.waydroid-nftables;
+
   # ═══════════════════════════ 蓝牙 ═══════════════════════════
   # 主板的 Intel AX210 蓝牙是 USB 直通进来的（8087:0032，driver = btusb），
   # 内核开机时已经把固件喂进去了，驱动侧不需要任何配置：
