@@ -355,15 +355,21 @@ hl.window_rule({
 --     这正是这里想要的 —— 否则 Waydroid 窗口会被「上次拖成多大」记走，尺寸飘。
 --   * 注意这与 Android 自己的输出分辨率是两件事：那个由 session 启动时的
 --     `persist.waydroid.width/height` 决定（`waydroid prop set …` 后必须重启 session）。
---   * 窗口尺寸 405x900（2026-09-22 用户定的）：**与 Android 的 1080x2400 同比例（9:20）**，
---     所以画面是等比缩放、手机布局不变形；高约屏（2560x1440）的 5/8，不挡事。
---     曾经按字面钉成 1080x2400（Pixel 7 的真实像素尺寸），实测在 1440 高的屏上上下各伸出
---     480px（`at: 740,-480`）还占掉近半屏幕，用户否了 —— 1080x2400 只该作为「Android 内部
---     渲染分辨率」（persist.waydroid.width/height），不要拿来当窗口尺寸。
+--   * 尺寸 405x900 = Pixel 7（panther，1080x2400）的**等比缩放**（比例都是 9:20），高约屏（2560x1440）的 5/8。
+--     **锁死靠的是 `min_size` + `max_size` 写成同一个值** —— 只写 `size` 不够：那只是「开窗时的初始尺寸」，
+--     用户照样能用 SUPER+右键拖动改掉（2026-09-22 用户实测反馈）。两个约束相等后拖动 resize 会被钳制回来。
+--     依据：Hyprland 0.55.4 的 window-rule 效果列表里就有 `max_size` / `min_size` / `keep_aspect_ratio`
+--     （`src/desktop/rule/windowRule/WindowRuleEffectContainer.cpp`）。实测（`hyprctl eval` 临时加这条规则后）：
+--     `hl.dsp.window.resize({x=800,y=800})` 与 `{x=200,y=200}` 结果都是 405x900，且对**已经开着的**窗口立即生效。
+--   * 曾按字面钉成 1080x2400（Pixel 7 的真实像素尺寸），实测在 1440 高的屏上上下各伸出 480px
+--     （`at: 740,-480`）还占掉近半屏幕，用户否了。1080x2400 只作 Android 内部渲染分辨率
+--     （`persist.waydroid.width/height`），窗口另有其尺寸。
 hl.window_rule({
   name = "waydroid-pixel7-size",
   match = { class = "^Waydroid$" },
   size = "405 900",
+  min_size = "405 900",
+  max_size = "405 900",
 })
 
 -- 忽略所有应用的最大化请求
