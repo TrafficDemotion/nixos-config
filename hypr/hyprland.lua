@@ -355,12 +355,15 @@ hl.window_rule({
 --     这正是这里想要的 —— 否则 Waydroid 窗口会被「上次拖成多大」记走，尺寸飘。
 --   * 注意这与 Android 自己的输出分辨率是两件事：那个由 session 启动时的
 --     `persist.waydroid.width/height` 决定（`waydroid prop set …` 后必须重启 session）。
---   * 屏幕只有 2560x1440，所以 2400 高的窗口底部会伸到屏幕外；想整机可见就把这里改成
---     等比的 "648 1440"（精确 0.6 倍），Hyprland 会把 Android 的画面等比缩放进窗口。
+--   * 窗口尺寸 405x900（2026-09-22 用户定的）：**与 Android 的 1080x2400 同比例（9:20）**，
+--     所以画面是等比缩放、手机布局不变形；高约屏（2560x1440）的 5/8，不挡事。
+--     曾经按字面钉成 1080x2400（Pixel 7 的真实像素尺寸），实测在 1440 高的屏上上下各伸出
+--     480px（`at: 740,-480`）还占掉近半屏幕，用户否了 —— 1080x2400 只该作为「Android 内部
+--     渲染分辨率」（persist.waydroid.width/height），不要拿来当窗口尺寸。
 hl.window_rule({
   name = "waydroid-pixel7-size",
   match = { class = "^Waydroid$" },
-  size = "1080 2400",
+  size = "405 900",
 })
 
 -- 忽略所有应用的最大化请求
