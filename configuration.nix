@@ -10,6 +10,11 @@
 
 { config, lib, pkgs, inputs, ... }:
 
+let
+  # modloader：用户态加载内核模块的小工具（KernelSU 模块里有未导出符号，
+  # 普通 modprobe 装不进去）。定义与理由见 pkgs/modloader.nix。
+  modloader = pkgs.callPackage ./pkgs/modloader.nix { };
+in
 {
   imports = [ ./hardware-configuration.nix ];
 
@@ -154,6 +159,52 @@
   # 所以这里直接换掉：waydroid-nftables 就是官方
   # `waydroid.override { withNftables = true }`（build 时 USE_NFTABLES=1，脚本改用 nft）。
   virtualisation.waydroid.package = pkgs.waydroid-nftables;
+
+  # ═════════════════════ KernelSU（Waydroid 的 root）═════════════════════
+  # Waydroid 与宿主共享内核，所以 Android 侧的 root 方案必须落在宿主内核里：
+  # 把 KernelSU 编成一个外部内核模块（包定义见 pkgs/kernelsu-waydroid.nix，
+  # 用的是 supechicken 的 waydroid 分支，带 CONFIG_KSU_NON_ANDROID），
+  # 再用 pkgs/modloader.nix 那个加载器装进去 —— 模块里有 27 个未导出内核符号，
+  # 普通 modprobe/insmod 会直接 "Unknown symbol" 拒绝。
+  #
+  # 为什么用 boot.extraModulePackages：这是 NixOS 处理外部内核模块的官方机制，
+  # 它用同一个内核 derivation 编译 → vermagic 自动匹配（实测 6.18.48 SMP preempt
+  # mod_unload，与宿主内核逐字一致）。
+  # ⚠️ 路径要用 /run/current-system，**不能**用 /run/booted-system：后者指向「本次
+  # 开机时的系统」，刚 switch 过去的新模块只在 current-system 里有 —— 用 booted-system
+  # 会得到 "Could not read file"（踩过一次）。开机时两者是同一份，所以 current-system
+  # 在两个场景都对。
+  # ⚠️ 不要把这个模块再加进 boot.kernelModules —— 那样 NixOS 会改用 modprobe 加载，
+  # 必然失败，开机日志里会刷一串 Unknown symbol。
+  boot.extraModulePackages = [
+    (config.boot.kernelPackages.callPackage ./pkgs/kernelsu-waydroid.nix { })
+  ];
+
+  # 加载服务。时序是关键：KernelSU 是在 Android init（容器内 PID 1）exec
+  # /system/bin/init 的那一刻给它打标记的，模块必须**先于 Android 启动**装进内核，
+  # 否则那个 Android 会话不会被接管（表现为管理器里能看到内核版本、但授权不生效）。
+  # 所以 before = waydroid-container.service，而不是等用户启动 session 之后。
+  #
+  # ExecStartPre 的 `-` 前缀 = 忽略 rmmod 的失败（模块没加载时 rmmod 会报错），
+  # 让服务「先卸再装」保持幂等 —— rebuild 重新触发这个服务时也不会因为
+  # "File exists" 加载失败。
+  systemd.services.kernelsu = {
+    description = "Load KernelSU kernel module for Waydroid";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "waydroid-container.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStartPre = "-${pkgs.kmod}/bin/rmmod kernelsu";
+      ExecStart = "${modloader}/bin/modloader /run/current-system/kernel-modules/lib/modules/${config.boot.kernelPackages.kernel.modDirVersion}/extra/kernelsu.ko";
+    };
+  };
+  # 回滚 / 停用：
+  #   临时停（不动 Nix 配置）：sudo systemctl stop kernelsu && sudo rmmod kernelsu
+  #     —— Android 立刻回到「没有 root」；再启用：sudo systemctl start kernelsu
+  #     （然后重启一次 Waydroid 会话，让 Android init 重新被接管）。
+  #   永久删：删掉上面这段 + let 里的 modloader + 两个 pkgs/*.nix → rebuild。
+  #   Android 侧的东西（管理器 APK、/data/adb/ksu）独立于宿主，要清就在 Waydroid 里卸载。
 
   # ═══════════════════════════ 蓝牙 ═══════════════════════════
   # 主板的 Intel AX210 蓝牙是 USB 直通进来的（8087:0032，driver = btusb），
