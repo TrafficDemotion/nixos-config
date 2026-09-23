@@ -349,6 +349,20 @@ hl.window_rule({
   persistent_size = true,
 })
 
+-- Waydroid（Android 容器）窗口尺寸钉成 Google Pixel 7（代号 panther）的屏幕：1080x2400（20:9）。
+-- 用户 2026-09-22 要求「固定窗口尺寸为 pixel7-panther 的屏幕尺寸」。
+--   * 静态 size 规则**会压过**上面那条 persistent-size 记忆（见 neovide 那段 A/B 实测），
+--     这正是这里想要的 —— 否则 Waydroid 窗口会被「上次拖成多大」记走，尺寸飘。
+--   * 注意这与 Android 自己的输出分辨率是两件事：那个由 session 启动时的
+--     `persist.waydroid.width/height` 决定（`waydroid prop set …` 后必须重启 session）。
+--   * 屏幕只有 2560x1440，所以 2400 高的窗口底部会伸到屏幕外；想整机可见就把这里改成
+--     等比的 "648 1440"（精确 0.6 倍），Hyprland 会把 Android 的画面等比缩放进窗口。
+hl.window_rule({
+  name = "waydroid-pixel7-size",
+  match = { class = "^Waydroid$" },
+  size = "1080 2400",
+})
+
 -- 忽略所有应用的最大化请求
 hl.window_rule({
   name = "suppress-maximize-events",

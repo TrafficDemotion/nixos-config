@@ -390,6 +390,37 @@ in
   # 会被一起 SIGTERM。改成只终止主进程（qs 自己），已开的应用留着。
   systemd.user.services.caelestia.Service.KillMode = "process";
 
+  # ── Waydroid 会话自启动（2026-09-22 用户要求）──
+  # Android 容器那一半是系统服务（waydroid-container.service，NixOS 模块已 enable），
+  # 但「会话」那一半是用户级的：不写这条就得每次手动 `waydroid session start`。
+  # 挂在 graphical-session.target 上 —— 本机是 uwsm 会话，实测该 target 是 active
+  # （`systemctl --user list-units --type=target | grep graphical`），而且 uwsm 把
+  # WAYLAND_DISPLAY=wayland-1 / XDG_RUNTIME_DIR 导进了 systemd user 环境
+  # （`systemctl --user show-environment` 可见），所以 waydroid 连得上合成器。
+  # UI 不自动弹（要不要看随你）：需要时点启动器里的 "Waydroid"（包自带 Waydroid.desktop）
+  # 或跑 `waydroid show-full-ui`。
+  systemd.user.services.waydroid-session = {
+    Unit = {
+      Description = "Waydroid session (Android container session)";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStart = "${pkgs.waydroid-nftables}/bin/waydroid session start";
+      Restart = "on-failure";
+      RestartSec = 5;
+      # Android 的 lcd density。waydroid 在 session 启动时这样算
+      # （`tools/actions/session_manager.py:73-80`）：先问**宿主**的 `ro.sf.lcd_density`
+      # —— 宿主是 NixOS，没有 getprop，得到空串 → 落到 `GRID_UNIT_PX` 环境变量，
+      # **dpi = GRID_UNIT_PX × 20** → 都没有才写 "0" 让 Android 自己决定。
+      # 21 × 20 = 420 dpi，正是 Google Pixel 7（panther，1080x2400 / 416 ppi）的原厂密度，
+      # 配上面的 1080x2400 就是 1:1 的手机观感（默认不设时这里是 180，UI 会小得离谱）。
+      # ⚠️ 别走 `persist.waydroid.lcd_density` 那个 prop —— 实测设了也不会被读，生效的仍是 ro.sf.lcd_density。
+      Environment = [ "GRID_UNIT_PX=21" ];
+    };
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
+
 
 
   programs.kitty = {
