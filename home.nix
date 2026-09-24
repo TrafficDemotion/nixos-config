@@ -733,7 +733,7 @@ in
     scrcpy = {
       name = "scrcpy (BlissOS)";
       comment = "Stream and control BlissOS VM107 (audio off, auto-connects 192.168.2.197:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=uhid --max-size=1280";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --max-size=1280";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
@@ -741,7 +741,7 @@ in
     };
     scrcpy-console = {
       name = "scrcpy (BlissOS, console)";
-      comment = "Same as above, but runs in a terminal (shows logs)";
+      comment = "Same as above, but runs in a terminal (shows logs) and uses a real HID mouse (captured/relative mode - for games)";
       exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=uhid --max-size=1280 --pause-on-exit=if-error";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
