@@ -372,6 +372,22 @@ hl.window_rule({
   max_size = "405 900",
 })
 
+-- scrcpy（串 BlissOS VM107）的窗口：开窗尺寸 = 画面尺寸，并在拖动时**保持这个比例**（2026-09-24 用户要求"固定比例"）。
+--   * 串流尺寸 = `--max-size=1280` 作用在 720x1600（9:20）的面板上 → **576x1280**（与画面 1:1，无黑边）。
+--   * 窗口 class 是 Nix wrapper 的名字 **`.scrcpy-wrapped`**（不是 `scrcpy`）—— 判据 `hyprctl clients`。
+--   * regex 用 std::regex（ECMAScript）：**转义只对 `.` 用 `\`，别用 Lua 的 `%`** —— 写成 `%` 会静默不匹配（踩过）。
+--   * 想要真 9:16：先在 PVE 把面板换成 720x1280（`args` 里 `yres=1600`→`1280` + qm stop/start，见 SOUL），
+--     再把这里与 launcher 条目的 `--max-size` 一起改（576x1024）。
+--   * 想连尺寸也钉死（像上面 waydroid 那条）：补 `min_size` / `max_size` = `size` 同值。
+hl.window_rule({
+  name = "scrcpy-phone-aspect",
+  match = { class = "^\\.scrcpy-wrapped$" },
+  size = "576 1280",
+  min_size = "576 1280",
+  max_size = "576 1280",
+  keep_aspect_ratio = true,
+})
+
 -- 忽略所有应用的最大化请求
 hl.window_rule({
   name = "suppress-maximize-events",
