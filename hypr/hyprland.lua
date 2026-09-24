@@ -372,19 +372,18 @@ hl.window_rule({
   max_size = "405 900",
 })
 
--- scrcpy（串 BlissOS VM107）的窗口：开窗尺寸 = 画面尺寸，并在拖动时**保持这个比例**（2026-09-24 用户要求"固定比例"）。
---   * 串流尺寸 = `--max-size=1280` 作用在 720x1600（9:20）的面板上 → **576x1280**（与画面 1:1，无黑边）。
+-- scrcpy（串 BlissOS VM107）的窗口：**拖动缩放时保持比例**（2026-09-24 用户要求"缩放时保持窗口比例、不要黑边"）。
+--   * 画面比例 = 面板 720x1600（9:20）→ `--max-size=1280` 得 576x1280；窗口比例与画面一致 ⇒ 不会出现黑边。
+--   * **不要写 `size` / `min_size` / `max_size`**：`size` 会压过上面那条 `persistent_size`（用户自己拖出的尺寸记不住），
+--     `min_size` == `max_size` 又会把窗口锁死（用户 2026-09-24 反馈"最小尺寸太大了"，想再拖小）。只留 `keep_aspect_ratio`。
+--   * `keep_aspect_ratio` 只约束**交互式拖动**；程序化 `hl.dsp.window.resize({x=…,y=…})` 不受它管（实测能拉成 1000x400，
+--     所以别用 dispatch 去验证它）。要**真正锁死**才加 `min_size`/`max_size` 同值（那时程序化 resize 会被钳回）。
 --   * 窗口 class 是 Nix wrapper 的名字 **`.scrcpy-wrapped`**（不是 `scrcpy`）—— 判据 `hyprctl clients`。
---   * regex 用 std::regex（ECMAScript）：**转义只对 `.` 用 `\`，别用 Lua 的 `%`** —— 写成 `%` 会静默不匹配（踩过）。
---   * 想要真 9:16：先在 PVE 把面板换成 720x1280（`args` 里 `yres=1600`→`1280` + qm stop/start，见 SOUL），
---     再把这里与 launcher 条目的 `--max-size` 一起改（576x1024）。
---   * 想连尺寸也钉死（像上面 waydroid 那条）：补 `min_size` / `max_size` = `size` 同值。
+--   * regex 走 std::regex（ECMAScript）：**只转义 `.`**，别用 Lua 的 `%` —— 写成 `%-` 会静默不匹配（踩过）。
+--   * 改完记得 `nixos-rebuild switch` **再 `hyprctl reload`**，否则不生效（软链换新不会自动重载）。
 hl.window_rule({
-  name = "scrcpy-phone-aspect",
+  name = "scrcpy-keep-aspect",
   match = { class = "^\\.scrcpy-wrapped$" },
-  size = "576 1280",
-  min_size = "576 1280",
-  max_size = "576 1280",
   keep_aspect_ratio = true,
 })
 
