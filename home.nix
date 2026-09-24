@@ -733,7 +733,7 @@ in
     scrcpy = {
       name = "scrcpy (BlissOS)";
       comment = "Stream and control BlissOS VM107 (audio off, auto-connects 192.168.2.197:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --max-size=1280";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
@@ -742,7 +742,7 @@ in
     scrcpy-console = {
       name = "scrcpy (BlissOS, console)";
       comment = "Same as above, but runs in a terminal (shows logs)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --pause-on-exit=if-error";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --max-size=1280 --pause-on-exit=if-error";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = true;
