@@ -725,6 +725,29 @@ in
       exec = "true";
       settings.Hidden = "true";
     };
+    # 覆盖 nixpkgs 自带的 scrcpy.desktop（同名条目写在 ~/.local/share/applications，
+    # 优先级高于 profile 里那份）：发行版那条跑裸 `scrcpy`，而这台 BlissOS 没有音频设备 →
+    # scrcpy 的音频线程抛 UnsupportedOperationException，整个 server 被带走、窗口一闪就退
+    # （表现就是「启动器里点了没反应」）。
+    # 这里显式 --no-audio；--tcpip 让它自己先 adb connect（设备是 TCP 5555，重启后不用手工连）。
+    scrcpy = {
+      name = "scrcpy (BlissOS)";
+      comment = "串流/远控 BlissOS VM107（已关音频、自动连接 192.168.2.197:5555）";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555";
+      icon = "scrcpy";
+      categories = [ "Utility" "RemoteAccess" ];
+      terminal = false;
+      settings.StartupNotify = "false";
+    };
+    scrcpy-console = {
+      name = "scrcpy (BlissOS, console)";
+      comment = "同上，但在终端里跑（能看日志）";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --pause-on-exit=if-error";
+      icon = "scrcpy";
+      categories = [ "Utility" "RemoteAccess" ];
+      terminal = true;
+      settings.StartupNotify = "false";
+    };
   };
 
   # ═══════════════════ 浏览器：LibreWolf ═══════════════════
