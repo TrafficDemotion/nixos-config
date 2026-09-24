@@ -732,7 +732,7 @@ in
     # 这里显式 --no-audio；--tcpip 让它自己先 adb connect（设备是 TCP 5555，重启后不用手工连）。
     scrcpy = {
       name = "scrcpy (BlissOS)";
-      comment = "串流/远控 BlissOS VM107（已关音频、自动连接 192.168.2.197:5555）";
+      comment = "Stream and control BlissOS VM107 (audio off, auto-connects 192.168.2.197:5555)";
       exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
@@ -741,7 +741,7 @@ in
     };
     scrcpy-console = {
       name = "scrcpy (BlissOS, console)";
-      comment = "同上，但在终端里跑（能看日志）";
+      comment = "Same as above, but runs in a terminal (shows logs)";
       exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --pause-on-exit=if-error";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
