@@ -413,10 +413,13 @@ in
       # （`tools/actions/session_manager.py:73-80`）：先问**宿主**的 `ro.sf.lcd_density`
       # —— 宿主是 NixOS，没有 getprop，得到空串 → 落到 `GRID_UNIT_PX` 环境变量，
       # **dpi = GRID_UNIT_PX × 20** → 都没有才写 "0" 让 Android 自己决定。
-      # 21 × 20 = 420 dpi，正是 Google Pixel 7（panther，1080x2400 / 416 ppi）的原厂密度，
-      # 配上面的 1080x2400 就是 1:1 的手机观感（默认不设时这里是 180，UI 会小得离谱）。
+      # 8 × 20 = 160 dpi。为什么要 160：Android 的输出分辨率必须**等于窗口尺寸**
+      # （见 hyprland.lua 里 waydroid-pixel7-size 那条规则 —— 窗口比分辨率小是「裁剪」不是
+      # 缩放，实测 405x900 的窗口配 1080x2400 只显示左上角一块），现在的组合是
+      # 分辨率 405x900 + 窗口 405x900；160dpi 下 1dp = 1px ⇒ 逻辑宽度 405dp，
+      # Pixel 7（panther）是 411dp（1080px / 420dpi × 160），手机布局观感一致。
       # ⚠️ 别走 `persist.waydroid.lcd_density` 那个 prop —— 实测设了也不会被读，生效的仍是 ro.sf.lcd_density。
-      Environment = [ "GRID_UNIT_PX=21" ];
+      Environment = [ "GRID_UNIT_PX=8" ];
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
@@ -927,6 +930,8 @@ in
 
   # ═══════════════════ 用户级软件包 ═══════════════════
   home.packages = with pkgs; [
+    scrcpy # Android 串流/远控客户端（scrcpy 4.x，连 BlissOS VM107）
+    android-tools # 提供 adb（scrcpy 需要；也方便直接 adb shell）
     hyprpolkitagent # polkit 认证弹窗（Caelestia 不带）
     qt6Packages.fcitx5-configtool # 输入法设置界面
     # 注：早期自己拼 shell 时装的 networkmanagerapplet（托盘网络图标）已于 2026-09-16 删掉 ——
