@@ -44,9 +44,14 @@ let
     dontConfigure = true;
     buildPhase = ''
       runHook preBuild
-      # 注意：kbuild 对 `M=` 外部模块会把 $(src) 求值成 `.`，上游 Kbuild 的
+      # 注意：kbuild 对 M= 外部模块会把 $(src) 求值成 `.`，上游 Kbuild 的
       # KSU_KERNEL_DIR 因此算到内核源码树上去 ⇒ 必须显式传 src=<模块目录>。
       # 工具链用宿主内核同款 gcc（NixOS 内核就是 gcc 编的）。
+      # 版本号：Kbuild 用 `30000 + git rev-list --count HEAD`，而 Nix 从 tarball
+      # 编译时没有 .git ⇒ 退化成 fallback(1) 报 30001，管理器
+      # (MINIMAL_SUPPORTED_KERNEL=33188) 会因此把模块管理 UI 整个关掉。
+      # 3271 = waydroid-dev(2734bc6) 的真实提交序数 ⇒ 33271，与上游 manager
+      # 33267 同代；KSU_GIT_VERSION_VALID=1 才是那个开关。
       make -C "${kernel.dev}/lib/modules/${modDir}/build" \
         M="$PWD/kernel" \
         src="$PWD/kernel" \
@@ -56,11 +61,6 @@ let
         CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER=y \
         CONFIG_KSU_SELINUX=n \
         KBUILD_MODPOST_WARN=1 \
-        # 版本号：Kbuild 用 `30000 + git rev-list --count HEAD`，而 Nix 从 tarball
-        # 编译时没有 .git ⇒ 退化成 fallback(1) 报 30001，管理器
-        # (MINIMAL_SUPPORTED_KERNEL=33188) 会因此把模块管理 UI 整个关掉。
-        # 3271 = waydroid-dev(2734bc6) 的真实提交序数 ⇒ 33271，与上游 manager
-        # 33267 同代。KSU_GIT_VERSION_VALID=1 才是那个开关。
         KSU_GIT_VERSION=3271 \
         KSU_GIT_VERSION_VALID=1 \
         KSU_GIT_TAG=waydroid-dev-2026.08.19-r4 \
