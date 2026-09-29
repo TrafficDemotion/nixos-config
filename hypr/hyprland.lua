@@ -388,6 +388,12 @@ hl.window_rule({
 --   * 改完 `nixos-rebuild switch` **再 `hyprctl reload`**。
 hl.window_rule({
   name = "gamescope-keep-aspect",
+
+  -- Waydroid 滚轮补偿（2026-09-29）：Android 侧滚轮步长是**绝对像素**（~10px/格），
+  -- 显示从 405x900 涨到 1080x2400 后视觉上弱化 ~2.7 倍，再经 gamescope 窗口缩到 405 又 ÷2.7
+  -- ⇒ 1~3 格几乎看不出位移。用窗口规则只给 gamescope 这个窗口放大，其它程序不受影响。
+  -- ⚠️ class 实测是 `.gamescope-wrapped`（带前导点），std::regex 里点要转义。
+  hl.window_rule({ name = "gamescope-scroll-boost", match = { class = "^\\.gamescope-wrapped$" }, scroll_mouse = 8.0 })
   match = { class = "^gamescope$" },
   size = "405 900",
   keep_aspect_ratio = true,
