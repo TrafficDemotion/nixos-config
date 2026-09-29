@@ -99,6 +99,11 @@ let
       fi
     done
     install -m755 ${modloader} $out/modloader
+    # aosp-mount-hook 在 NixOS LXC 7.0.0 下必然失败（它的 AOSP procfs 审计
+    # 过不了），而上游 configure 每次都会把 lxc.hook.mount 指到它 ⇒ 容器会以
+    # "Failed to run mount hooks" 起不来。这里用空操作覆盖掉该 hook，保持
+    # 脚本"存在且可执行"以免 configure 的完整性检查失败。
+    install -m755 ${pkgs.writeShellScript "ksu-aosp-mount-hook-noop" "exit 0"} $out/aosp-mount-hook
     install -m644 ${kernelsuModule}/kernelsu.ko $out/modules/${modDir}/updates/kernelsu.ko
     install -m644 ${./uts-identity.conf} $out/uts-identity.conf
   '';
