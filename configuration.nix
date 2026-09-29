@@ -10,7 +10,7 @@
 
 { config, lib, pkgs, inputs, ... }:
 {
-  imports = [ ./hardware-configuration.nix ];
+  imports = [ ./hardware-configuration.nix ./kernelsu-waydroid/default.nix ];
 
   # Sunshine 用一个本地 vendored 的包定义（./pkgs/sunshine.nix）升到上游
   # v2026.910.221003：nixpkgs 26.05 与 unstable 都还停在 2026.516，而那个版本的
@@ -154,6 +154,8 @@
   # 所以这里直接换掉：waydroid-nftables 就是官方
   # `waydroid.override { withNftables = true }`（build 时 USE_NFTABLES=1，脚本改用 nft）。
   virtualisation.waydroid.package = pkgs.waydroid-nftables;
+\n  # KernelSU-Next 宿主侧（声明式，见 kernelsu-waydroid/default.nix）
+  services.kernelsu-waydroid.enable = true;
 
   # ═══════════ Android 侧 root = Magisk（Kitsune Mask），不再碰宿主内核 ═══════════
   # 2026-09-25：原来「把 KernelSU 编成宿主内核模块 + modloader 装载」那条路已删除

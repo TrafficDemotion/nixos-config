@@ -1,0 +1,51 @@
+#!/run/current-system/sw/bin/bash
+set -euo pipefail
+
+if (( EUID != 0 )); then
+    echo "${0##*/}: run as root." >&2
+    exit 1
+fi
+
+osrelease_file=${KSU_KERNEL_OSRELEASE_FILE:-/proc/sys/kernel/osrelease}
+module_root=${KSU_MODULE_ROOT:-/usr/lib/modules}
+
+# Read the loader key in the host UTS namespace. The isolated Waydroid release
+# configured below can never affect this value.
+kernel_release=$(<"$osrelease_file")
+if [[ -z $kernel_release || $kernel_release == */* ]]; then
+    echo "${0##*/}: invalid kernel release from ${osrelease_file}." >&2
+    exit 1
+fi
+
+module_path=$(modinfo -k "$kernel_release" -n kernelsu 2>/dev/null || true)
+if [[ -z $module_path ]]; then
+	module_path=$(find "${module_root}/${kernel_release}"/{extras,updates} \
+		-iname 'kernelsu.ko*' -print -quit 2>/dev/null || true)
+fi
+if [[ -z $module_path ]]; then
+    echo "${0##*/}: kernelsu.ko does not exist for ${kernel_release}." >&2
+    exit 1
+fi
+
+if ! grep -wq ext4 /proc/modules; then
+	modprobe -S "$kernel_release" ext4
+fi
+
+if (($#)); then
+    echo "${0##*/}: this command only loads KernelSU; stop Waydroid to unload it." >&2
+    exit 2
+fi
+
+if grep -q '^kernelsu ' /proc/modules; then
+    echo "${0##*/}: kernelsu is already loaded." >&2
+    exit 3
+fi
+
+case "$module_path" in
+    *.zst) zstdcat "$module_path" | /usr/lib/kernelsu-next-waydroid/modloader - ;;
+    *.xz) xzcat "$module_path" | /usr/lib/kernelsu-next-waydroid/modloader - ;;
+    *.gz) gzip -dc "$module_path" | /usr/lib/kernelsu-next-waydroid/modloader - ;;
+    *) cat "$module_path" | /usr/lib/kernelsu-next-waydroid/modloader - ;;
+esac
+
+/usr/lib/kernelsu-next-waydroid/configure-osrelease apply

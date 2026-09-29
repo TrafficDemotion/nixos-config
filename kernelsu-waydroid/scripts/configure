@@ -1,0 +1,105 @@
+#!/run/current-system/sw/bin/bash
+set -euo pipefail
+
+if (( EUID != 0 )); then
+    echo "${0##*/}: execute as root." >&2
+    exit 1
+fi
+
+profile=/var/lib/waydroid/lxc/waydroid/waydroid.seccomp
+backup=${profile}.pre-kernelsu
+container_config=/var/lib/waydroid/lxc/waydroid/config
+container_config_backup=${container_config}.pre-kernelsu
+aosp_mount_hook=/usr/lib/kernelsu-next-waydroid/aosp-mount-hook
+pre_start_hook=/usr/lib/kernelsu-next-waydroid/pre-start-hook
+post_stop_hook=/usr/lib/kernelsu-next-waydroid/post-stop-hook
+unload_worker=/usr/lib/kernelsu-next-waydroid/unload
+unload_service=/usr/lib/systemd/system/kernelsu-waydroid-unload.service
+unload_timer=/usr/lib/systemd/system/kernelsu-waydroid-unload.timer
+
+if [[ ! -f $profile ]]; then
+    echo "${0##*/}: Waydroid seccomp profile not found: $profile" >&2
+    exit 1
+fi
+
+if [[ ! -e $backup ]]; then
+    install -o root -g root -m 0644 "$profile" "$backup"
+fi
+
+if grep -qx 'reboot' "$profile"; then
+    sed -i '/^reboot$/d' "$profile"
+    echo "${0##*/}: removed the reboot deny rule required by the KernelSU magic-call transport."
+else
+    echo "${0##*/}: KernelSU magic-call transport is already allowed by the Waydroid seccomp profile."
+fi
+
+if [[ ! -f $container_config ]]; then
+    echo "${0##*/}: Waydroid LXC config not found: $container_config" >&2
+    exit 1
+fi
+if [[ ! -x $aosp_mount_hook ]]; then
+    echo "${0##*/}: AOSP mount hook not installed: $aosp_mount_hook" >&2
+    exit 1
+fi
+if [[ ! -x $pre_start_hook ]]; then
+    echo "${0##*/}: KernelSU pre-start hook not installed: $pre_start_hook" >&2
+    exit 1
+fi
+if [[ ! -x $post_stop_hook ]]; then
+    echo "${0##*/}: KernelSU post-stop hook not installed: $post_stop_hook" >&2
+    exit 1
+fi
+if [[ ! -x $unload_worker || ! -f $unload_service || ! -f $unload_timer ]]; then
+    echo "${0##*/}: asynchronous unload reconciler is incomplete." >&2
+    exit 1
+fi
+if [[ ! -e $container_config_backup ]]; then
+    install -o root -g root -m 0644 "$container_config" "$container_config_backup"
+fi
+
+hook_line="lxc.hook.mount = $aosp_mount_hook"
+sed -i \
+    's/# Restore Android 13 first_stage_init procfs security inside the container namespace./# Restore AOSP first_stage_init procfs security inside the container namespace./' \
+    "$container_config"
+if grep -Fqx "$hook_line" "$container_config"; then
+    echo "${0##*/}: AOSP mount hook is already configured."
+else
+    printf '\n# Restore AOSP first_stage_init procfs security inside the container namespace.\n%s\n' \
+        "$hook_line" >> "$container_config"
+    echo "${0##*/}: configured AOSP procfs mount options."
+fi
+
+pre_start_line="lxc.hook.pre-start = $pre_start_hook"
+if grep -Fqx "$pre_start_line" "$container_config"; then
+    echo "${0##*/}: KernelSU pre-start hook is already configured."
+else
+    printf '\n# Load KernelSU before every Waydroid container init.\n%s\n' \
+        "$pre_start_line" >> "$container_config"
+    echo "${0##*/}: configured KernelSU pre-start loading."
+fi
+
+post_stop_line="lxc.hook.post-stop = $post_stop_hook"
+sed -i '\|^lxc\.hook\.post-stop = /dev/null$|d' "$container_config"
+if grep -Fqx "$post_stop_line" "$container_config"; then
+    echo "${0##*/}: KernelSU post-stop hook is already configured."
+else
+    printf '\n# Queue KernelSU teardown after the Waydroid container has fully exited.\n%s\n' \
+        "$post_stop_line" >> "$container_config"
+    echo "${0##*/}: configured KernelSU post-stop teardown."
+fi
+
+# Keep the start-host /dev/pts finalizer available only as an experimental
+# diagnostic helper.  It must not be enabled automatically until the literal
+# devpts replacement has passed the complete Android runtime regression suite.
+sed -i '\|^lxc\.hook\.start-host = /usr/lib/kernelsu-next-waydroid/aosp-start-host-hook$|d' \
+    "$container_config"
+
+# A start-host input hook is intentionally forbidden. Creating Wayland FIFOs
+# before Android second-stage init makes init block while opening a FIFO before
+# its peer exists. The Waydroid hwcomposer owns their lifecycle.
+sed -i '\|^lxc\.hook\.start-host = /usr/lib/kernelsu-next-waydroid/input-start-host-hook$|d' \
+    "$container_config"
+
+echo "${0##*/}: original profile backup: $backup"
+echo "${0##*/}: original container config backup: $container_config_backup"
+echo "${0##*/}: restart the Waydroid container before testing."
