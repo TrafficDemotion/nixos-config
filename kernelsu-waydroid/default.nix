@@ -89,8 +89,8 @@ let
     cp -a ${./scripts}/. $out/
     chmod -R u+w $out
     substituteInPlace $out/* \
-      --replace-fail /usr/lib/kernelsu-next-waydroid /etc/kernelsu-next-waydroid \
-      --replace-fail /usr/lib/modules /etc/kernelsu-next-waydroid/modules
+      --replace-warn /usr/lib/kernelsu-next-waydroid /etc/kernelsu-next-waydroid \
+      --replace-warn /usr/lib/modules /etc/kernelsu-next-waydroid/modules
     install -m755 ${modloader} $out/modloader
     install -m644 ${kernelsuModule}/kernelsu.ko $out/modules/${modDir}/updates/kernelsu.ko
     install -m644 ${./uts-identity.conf} $out/uts-identity.conf
