@@ -529,6 +529,9 @@ in
       Description = "Waydroid UI on a gamescope nested output (Android stays 1080x2400; window is freely resizable)";
       After = [ "graphical-session.target" ];
       PartOf = [ "graphical-session.target" ];
+      # 循环保护：5 分钟内最多起 5 次，超了置 failed 别再撞（正常"关窗→自动回来"只算 1 次）。
+      StartLimitIntervalSec = 300;
+      StartLimitBurst = 5;
     };
     Service = {
       ExecStartPre = "${preScript}";
@@ -536,10 +539,12 @@ in
       # 比例由 hyprland.lua 的 gamescope-keep-aspect 保持）。
       # -S fit -F linear = 等比缩放 + 线性过滤。
       ExecStart = "${pkgs.gamescope}/bin/gamescope --backend wayland --expose-wayland -w 1080 -h 2400 -r 144 -W 405 -H 900 -S fit -F linear --force-windows-fullscreen -- ${innerScript}";
-      # on-failure + 10s：内层脚本在 session 掉线时 exit 1（会被拉起），
-      # 但不给"温启动循环"留机会 —— 容器一旦 wedge（见 skill：restart 会触发 guest 内核死锁），
-      # 高频重启最危险；10s 间隔也留出人工 `systemctl --user stop` 的时间。
-      Restart = "on-failure";
+      # Restart=always + 10s：**关掉窗口等于关掉这条链**（gamescope 干净退出），
+      # 而我们必须让它自己回来 —— 2026-09-29 实测：用 on-failure 时用户关窗后服务停在 inactive，
+      # 再用 launcher 打开就落到宿主 socket 上、变成"显示器比例小窗 + 放大的左上角"（见下面
+      # waydroid.desktop 那条注释）。防循环交给 [Unit] 的 StartLimit*；10s 间隔也留出人工
+      # `systemctl --user stop waydroid-gamescope` 的时间（容器 wedge 时别让它高频重启）。
+      Restart = "always";
       RestartSec = 10;
     };
     Install.WantedBy = [ "graphical-session.target" ];
@@ -901,6 +906,26 @@ in
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
       settings.StartupNotify = "false";
+    };
+
+    # 覆盖包自带的 `Waydroid.desktop`（同名 + HM 的 applications 目录优先级更高 ⇒ 盖住系统那份）。
+    # 包自带那条的 Exec 是**裸 `waydroid`**（点了基本等于没反应）；而 Android 应用那些
+    # `waydroid.<包名>.desktop` 是 Waydroid 运行时生成在 ~/.local/share/applications 里的，改不了 ——
+    # 所以这条是唯一能控的入口，必须让它走 systemd。
+    # 为什么必须走 systemd：`waydroid app launch <包名>` / `waydroid show-full-ui` 这类命令会
+    # **在调用者的环境里**按需拉起一个 session —— 从 launcher 点就是在宿主
+    # `WAYLAND_DISPLAY=wayland-1` 下拉起来 ⇒ container 的 wayland socket 绑到宿主 ⇒
+    # 画面变成 HWC 原生窗口（640x400 这种"显示器比例的小窗 + 放大的左上角"，因为窗口比
+    # Android 的 1080 窄，只能 1:1 显示左上角一块）。2026-09-29 用户实测。
+    # `systemctl --user start` 对已在跑的单元是 no-op（窗口本来就在），只有服务没跑时才拉起来。
+    Waydroid = {
+      name = "Waydroid";
+      genericName = "Android Container";
+      comment = "Show/restore the Waydroid UI (starts waydroid-gamescope.service)";
+      exec = "systemctl --user start waydroid-gamescope";
+      icon = "waydroid";
+      categories = [ "X-WayDroid-App" "Utility" ];
+      terminal = false;
     };
   };
 
