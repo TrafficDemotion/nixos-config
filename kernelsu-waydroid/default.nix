@@ -88,9 +88,14 @@ let
     mkdir -p $out/modules/${modDir}/updates
     cp -a ${./scripts}/. $out/
     chmod -R u+w $out
-    substituteInPlace $out/* \
-      --replace-warn /usr/lib/kernelsu-next-waydroid /etc/kernelsu-next-waydroid \
-      --replace-warn /usr/lib/modules /etc/kernelsu-next-waydroid/modules
+    # 只处理文件：$out 里还有 modules/ 目录，substituteInPlace 不能吃目录
+    for f in $out/*; do
+      if [ -f "$f" ]; then
+        substituteInPlace "$f" \
+          --replace-warn /usr/lib/kernelsu-next-waydroid /etc/kernelsu-next-waydroid \
+          --replace-warn /usr/lib/modules /etc/kernelsu-next-waydroid/modules
+      fi
+    done
     install -m755 ${modloader} $out/modloader
     install -m644 ${kernelsuModule}/kernelsu.ko $out/modules/${modDir}/updates/kernelsu.ko
     install -m644 ${./uts-identity.conf} $out/uts-identity.conf
