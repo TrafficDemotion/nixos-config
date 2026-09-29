@@ -885,10 +885,18 @@ in
     #     用户反馈"很糊"。**这不是显示器分辨率上限，是缩放本身** ⇒ 想清晰就 1:1，别指望"真机大小 + 清晰"兼得。
     #   * 等比拖动缩放靠 scrcpy 自带的窗口比例锁（默认开，反开关 `--no-window-aspect-ratio-lock`）+ hyprland.lua 的
     #     `scrcpy-keep-aspect` 规则 ⇒ 这里不写 `size` 规则（写了会压过「记住你拖过的尺寸」）。
+    # 鼠标侧键（2026-09-29）：`--mouse-bind` 的四个字符依次是 **右键 / 中键 / 4号键 / 5号键**。
+    #   * SDK 鼠标**送不出**「真」侧键 —— scrcpy 只能把它注入成一次触摸按下/抬起（带 BUTTON_BACK
+    #     状态位），而绝大多数应用只看 touch、不看 button 状态 ⇒ 表现成**左键单击**（用户报的 bug）。
+    #   * 真鼠标的 BTN_SIDE 在 BlissOS 上是**框架级返回**（2026-09-29 实测：往输入节点塞 BTN_SIDE
+    #     后前台从 Settings 回到 Launcher；BTN_EXTRA 无反应）⇒ 用 `b` 触发 BACK 就等效原生行为，
+    #     且不必把指针切到 UHID 的「捕获/相对」模式。
+    #   * 故：右键/中键仍原样转发（`+`），**4号键 = BACK（`b`）**，**5号键 = 忽略（`-`）**。
+    #     想要真 HID 侧键就用下面那个 console 条目（`--mouse=uhid`，代价：鼠标被捕获，LAlt/LSuper 释放）。
     scrcpy = {
       name = "scrcpy (BlissOS)";
       comment = "Stream and control BlissOS VM107 (audio off, auto-connects 192.168.2.197:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --max-size=1280 --window-width=408";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++b- --max-size=1280 --window-width=408";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
@@ -922,7 +930,7 @@ in
     scrcpy-waydroid = {
       name = "scrcpy (Waydroid)";
       comment = "Stream and control Waydroid (Android container on this host, 192.168.240.112:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.240.112:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --window-width=405 --max-size=900";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.240.112:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++b- --window-width=405 --max-size=900";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
