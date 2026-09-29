@@ -93,7 +93,9 @@ let
       if [ -f "$f" ]; then
         substituteInPlace "$f" \
           --replace-warn /usr/lib/kernelsu-next-waydroid /etc/kernelsu-next-waydroid \
-          --replace-warn /usr/lib/modules /etc/kernelsu-next-waydroid/modules
+          --replace-warn /usr/lib/modules /etc/kernelsu-next-waydroid/modules \
+          --replace-warn /usr/lib/systemd/system/kernelsu-waydroid-unload.service /etc/systemd/system/kernelsu-waydroid-unload.service \
+          --replace-warn /usr/lib/systemd/system/kernelsu-waydroid-unload.timer /etc/systemd/system/kernelsu-waydroid-unload.timer
       fi
     done
     install -m755 ${modloader} $out/modloader
@@ -107,20 +109,6 @@ in
 
   config = lib.mkIf cfg.enable {
     environment.etc."kernelsu-next-waydroid".source = bundle;
-
-    # 容器启动前：确保 lxc 挂上 pre-start/post-stop hook，并处理 seccomp
-    systemd.services.kernelsu-waydroid-configure = {
-      description = "Configure KernelSU-Next hooks for the Waydroid LXC container";
-      before = [ "waydroid-container.service" ];
-      wantedBy = [ "multi-user.target" ];
-      path = with pkgs; [ coreutils util-linux gnugrep gnused bash ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        # 首次运行时 lxc 配置还没生成，允许失败（lxc 生成后下次开机补上）
-        ExecStart = "-/etc/kernelsu-next-waydroid/configure";
-      };
-    };
 
     # 容器完全退出后安全卸载模块
     systemd.services.kernelsu-waydroid-unload = {
@@ -147,5 +135,11 @@ in
     # hook 是在 waydroid-container.service 的环境里被 lxc 调用的，确保它要的命令可见
     systemd.services.waydroid-container.path =
       with pkgs; [ coreutils kmod zstd xz gzip util-linux procps ];
+
+    # Waydroid 每次起容器都会重写 /var/lib/waydroid/lxc/waydroid/config（我们的
+    # hook 行会被抹掉），所以注册必须在**每次容器启动前**做，不能只做一次。
+    systemd.services.waydroid-container.preStart = lib.mkAfter ''
+      /etc/kernelsu-next-waydroid/configure || true
+    '';
   };
 }
