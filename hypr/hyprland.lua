@@ -396,7 +396,7 @@ hl.window_rule({
 -- Waydroid 滚轮补偿（2026-09-29）：Android 侧滚轮步长是**绝对像素**（~10px/格），
 --   显示从 405x900 涨到 1080x2400 后视觉弱化 ~2.7 倍，再经 gamescope 窗口缩到 405 又 ÷2.7
 --   ⇒ 1~3 格几乎看不出位移。用窗口规则只给这个窗口放大，其它程序不受影响。
-hl.window_rule({ name = "gamescope-scroll-boost", match = { class = "^\\.?gamescope" }, scroll_mouse = 16.0 })
+hl.window_rule({ name = "gamescope-scroll-boost", match = { class = "^\\.?gamescope" }, scroll_mouse = 10.0 })
 
 -- gamescope 窗口（承载 Waydroid 画面那层）落到用户的 special workspace：
 --   * 用户把常用窗口（LibreWolf / scrcpy / kitty…）都放在 special:special（SUPER+S 开关的覆盖层）。
