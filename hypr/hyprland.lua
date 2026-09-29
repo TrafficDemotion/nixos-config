@@ -380,12 +380,16 @@ hl.window_rule({
 
 -- gamescope 的外层窗口（承载 Waydroid 画面的那层，class = `gamescope`）：**拖动缩放时保持比例**。
 --   * 窗口比例永远 = 服务里的 nested 输出 1080x2400 = 9:20 ⇒ gamescope 的 `-S fit` 不会在窗口里留黑边。
---   * 不写 `size`：初始尺寸由服务的 `-W 405 -H 900` 给；用户拖过的尺寸靠上面 `persistent-size` 那条记住。
+--   * **钉初始尺寸 = 405x900**（2026-09-29 用户要求「拖过的大小不用记住，每次打开都那个大小」）：
+--     静态 `size` 规则会**压过**上面那条 `persistent-size` 记忆（A/B 实测见 neovide 那段），所以每次开窗都是 405x900；
+--     但它**不锁死** —— 只写 `size` 只是「开窗时的初始尺寸」，用户照样能拖（要真锁死得 `min_size` == `max_size`）。
+--     服务里的 `-W 405 -H 900` 保留：那是 gamescope 自己请求的初值，这条规则是 WM 侧的兜底/覆盖。
 --   * 2026-09-29 实测：405x900 → 540x1200 改尺寸后画面仍完整（gamescope 自己重缩放，这与 HWC 原生窗口完全不同）。
 --   * 改完 `nixos-rebuild switch` **再 `hyprctl reload`**。
 hl.window_rule({
   name = "gamescope-keep-aspect",
   match = { class = "^gamescope$" },
+  size = "405 900",
   keep_aspect_ratio = true,
 })
 

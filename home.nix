@@ -462,16 +462,29 @@ in
       set -u
       export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
       systemctl --user stop waydroid-session 2>/dev/null || true
+      # ⚠️ 杀 session 进程必须覆盖**两种形态**：Waydroid 会把自己 daemonize 成
+      # `.../.waydroid.py-wrapped`（**不带** "session start" 参数，ppid 变成 systemd --user
+      # 的孤儿形态）。只按 "session start" 杀会漏掉它，而它一直占着 D-Bus 名
+      # `id.waydro.Session` ⇒ 新 session 只回一句 "Session is already running" 就退出 ⇒
+      # 内层脚本的 keepalive 立刻结束 ⇒ gamescope 反复重启、窗口永远建不出来（2026-09-29 实测）。
+      # 下面的 regex 同时命中两副面孔，但**不碰** `... .waydroid.py-wrapped container start`
+      # （那是系统服务 waydroid-container.service）。
+      pkill -f "\.waydroid\.py-wrapped( session start)?$" 2>/dev/null || true
       pkill -f "bin/gamescope" 2>/dev/null || true
-      pkill -f "waydroid.py-wrapped session start" 2>/dev/null || true
+      # 判据用「D-Bus 名还有没有属主」，比 pgrep 可靠（daemonize 后 cmdline 会变）
       i=0
-      while [ "$i" -lt 20 ]; do
-        if ! pgrep -f "bin/gamescope" >/dev/null 2>&1 && ! pgrep -f "waydroid.py-wrapped session start" >/dev/null 2>&1; then
-          break
-        fi
+      while [ "$i" -lt 25 ]; do
+        busy=0
+        pgrep -f "bin/gamescope" >/dev/null 2>&1 && busy=1
+        busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus GetNameOwner s id.waydro.Session >/dev/null 2>&1 && busy=1
+        [ "$busy" -eq 0 ] && break
         sleep 1
         i=$((i + 1))
       done
+      if busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus GetNameOwner s id.waydro.Session >/dev/null 2>&1; then
+        echo "id.waydro.Session 仍有属主：清场失败，放弃本次启动（宁可不起，也不要一个绑错 socket 的窗口）" >&2
+        exit 1
+      fi
       sleep 1
     '';
     # gamescope 的**子进程**：跑在 gamescope 给的内层 WAYLAND_DISPLAY 上，session 一起
@@ -483,8 +496,8 @@ in
       # 与原来 waydroid-session.service 一致：dpi = GRID_UNIT_PX × 20 = 160
       # （Android 侧实际生效的是覆盖值 345，见 /data/system/display_settings.xml）
       export GRID_UNIT_PX=8
-      "$waydroid" session start &
-      session_pid=$!
+      start_log=/tmp/waydroid-gamescope-start.log
+      "$waydroid" session start > "$start_log" 2>&1 &
       i=0
       while [ "$i" -lt 90 ]; do
         "$waydroid" status 2>/dev/null | grep -q "Session:.*RUNNING" && break
@@ -492,10 +505,24 @@ in
         i=$((i + 1))
       done
       sleep 3
+      # 清场没干净时宁可失败（否则会绑定到别人的 socket，窗口看着像"空白/裁切"）
+      if grep -q "already running" "$start_log" 2>/dev/null; then
+        echo "session 报 already running（清场没干净）⇒ 退出，让 systemd 重跑整条链" >&2
+        exit 1
+      fi
       # session（重）启动会把 adbd 停掉 —— 手机端 scrcpy 靠它，这里补起来。
       /run/wrappers/bin/sudo -n "$waydroid" shell -- setprop ctl.start adbd >/dev/null 2>&1 || true
       "$waydroid" show-full-ui >/dev/null 2>&1 &
-      wait "$session_pid"
+      # ⚠️ 保活用「盯 session 状态」，**不要** `wait <session pid>`：Waydroid 会把自己
+      # daemonize（子进程先退出），wait 一返回就被当成"该重启" ⇒ gamescope 反复重启
+      # （2026-09-29 实测：NRestarts=20、日志 45 条 already running、容器被冻成 FROZEN）。
+      while :; do
+        if ! "$waydroid" status 2>/dev/null | grep -q "Session:.*RUNNING"; then
+          echo "session 已结束 ⇒ 退出，让 systemd 按 Restart 拉起整条链" >&2
+          exit 1
+        fi
+        sleep 5
+      done
     '';
   in {
     Unit = {
@@ -509,8 +536,11 @@ in
       # 比例由 hyprland.lua 的 gamescope-keep-aspect 保持）。
       # -S fit -F linear = 等比缩放 + 线性过滤。
       ExecStart = "${pkgs.gamescope}/bin/gamescope --backend wayland --expose-wayland -w 1080 -h 2400 -r 144 -W 405 -H 900 -S fit -F linear --force-windows-fullscreen -- ${innerScript}";
-      Restart = "always";
-      RestartSec = 3;
+      # on-failure + 10s：内层脚本在 session 掉线时 exit 1（会被拉起），
+      # 但不给"温启动循环"留机会 —— 容器一旦 wedge（见 skill：restart 会触发 guest 内核死锁），
+      # 高频重启最危险；10s 间隔也留出人工 `systemctl --user stop` 的时间。
+      Restart = "on-failure";
+      RestartSec = 10;
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
