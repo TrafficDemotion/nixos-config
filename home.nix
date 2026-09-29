@@ -558,7 +558,7 @@ in
       # nested 输出 1080x2400@144 → 外层窗口 405x900（初始尺寸；之后随你拖，
       # 比例由 hyprland.lua 的 gamescope-keep-aspect 保持）。
       # -S fit -F linear = 等比缩放 + 线性过滤。
-      ExecStart = "${pkgs.gamescope}/bin/gamescope --backend wayland --expose-wayland -w 1080 -h 2400 -r 144 -W 405 -H 900 -S fit -F linear --force-windows-fullscreen -- ${innerScript}";
+      ExecStart = "${pkgs.gamescope}/bin/gamescope --backend sdl --expose-wayland -w 1080 -h 2400 -r 144 -W 405 -H 900 -S fit -F linear --force-windows-fullscreen -- ${innerScript}";
       # Restart=on-failure：**关窗就是关掉**（2026-09-29 用户选定的行为 B）——
       # 用户关 gamescope 窗口时 gamescope 干净退出（exit 0）⇒ 不自动回来；要用时点 launcher 的
       # Waydroid 条目（= systemctl --user start waydroid-gamescope）唤起，窗口仍是规则钉的 405x900。
