@@ -393,6 +393,18 @@ hl.window_rule({
   keep_aspect_ratio = true,
 })
 
+-- gamescope 窗口（承载 Waydroid 画面那层）落到用户的 special workspace：
+--   * 用户把常用窗口（LibreWolf / scrcpy / kitty…）都放在 special:special（SUPER+S 开关的覆盖层）。
+--   * 新窗口默认落「普通活动工作区」，而覆盖层显示时**盖在普通工作区之上并优先接收输入** ⇒
+--     窗口即使看得见也点不到（2026-09-29 用户报「卡住、没法聚焦、拖不动」；实测画面正常在动，
+--     只是坐标完全落在 overlay 里的 LibreWolf 底下）。这条规则让它和用户的窗口同层。
+--   * 位置不固定（Hyprland 没有位置持久化）：开出来用 SUPER+拖动 摆一下即可。
+hl.window_rule({
+  name = "gamescope-workspace",
+  match = { class = "^gamescope$" },
+  workspace = "special:special",
+})
+
 -- 所有 scrcpy 串流窗口（class = nix wrapper 名 `.scrcpy-wrapped`，BlissOS 与 Waydroid 两个条目共用）：
 -- **拖动缩放时保持比例**（2026-09-24 用户要求"缩放时保持窗口比例、不要黑边"）。
 --   * 初始窗口尺寸不在这里定，而在启动器条目的 `--window-width=340`
