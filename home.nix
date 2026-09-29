@@ -758,15 +758,16 @@ in
     };
     # Waydroid（Android 容器，跑在同一台 NixOS 上）的串流目标：adb 走 waydroid0 网桥
     # 192.168.240.112:5555（= `waydroid adb connect` 给的地址），宿主直接可达。
-    #   * 窗口 `--window-width=540` + `--max-size=1200` ⇒ 窗口与编码都是 **540x1200**、**1:1 零重采样**（最清晰）。
+    #   * 尺寸定稿（2026-09-29 用户要求「比真机稍微大一点点、不要太糊」）= **405x900**，与原生 Waydroid 窗口同尺寸：
+    #     `--window-width=405` + `--max-size=900`（较长边 2400→900 ⇒ 宽取偶 404，实测 `Texture: 404x900`）⇒ **1:1 零重采样**。
     #     Android 侧保持 1080x2400 @345 ⇒ **手机端串流对齐真机 1080p 不受影响**（那条链路是 Android 的
     #     Physical size 决定的，且每个客户端各自建自己的镜像显示）。
-    #   * **`--max-size=1200`（2026-09-29 实测，解决"明显掉帧"）**：Waydroid 镜像**没有硬件 H.264 编码器**
+    #   * **`--max-size` 是掉帧的解药（2026-09-29 实测）**：Waydroid 镜像**没有硬件 H.264 编码器**
     #     （`logcat -s scrcpy` 打 `HW encoders: []`），1080x2400 全靠软件编码 —— 实测持续拖动时
-    #     `media.swcodec` 吃 **264% CPU**（4 核只剩 8% idle），客户端只有 **23~48 fps**；
-    #     `--max-size=1200`（= 540x1200）后编码 CPU 138%、**96~135 fps**。
-    #     ⚠️ **`--max-size` 限的是「较长边」**：竖屏 1080x2400 上写 `540` 只会得到 **242x540**，塞进 540 宽的
-    #     窗口就是放大 2.2 倍 ⇒ 又糊；要 540x1200 必须写 **1200**（2400 的一半）。
+    #     `media.swcodec` 吃 **264% CPU**（4 核剩 8% idle）、客户端只有 **23~48 fps**；
+    #     编码降到 540x1200（`--max-size=1200`）后 CPU **138%**、**96~135 fps**；404x900 只会更轻。
+    #     ⚠️ **`--max-size` 限的是「较长边」**：竖屏 1080x2400 上写 `540` 只会得到 **242x540**，塞进 540 宽的窗口
+    #     里被放大 2.2 倍 ⇒ 又糊。写「想要尺寸的较长边」：要 405x900 就写 `900`。
     #     （同理，手机端那 ~17fps 也是这个软件编码器的上限，不是链路问题。）
     #   * `--no-audio`：Waydroid 的音频本来就走宿主 PipeWire 出声，再让 scrcpy 抓一路会重复。
     #   * uhid 键鼠实测可用（容器内 `/dev/uhid` = `crw-rw---- uhid:uhid`，跑起来设备内出现
@@ -774,7 +775,7 @@ in
     scrcpy-waydroid = {
       name = "scrcpy (Waydroid)";
       comment = "Stream and control Waydroid (Android container on this host, 192.168.240.112:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.240.112:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --window-width=540 --max-size=1200";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.240.112:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --window-width=405 --max-size=900";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
