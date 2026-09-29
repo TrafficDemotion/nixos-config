@@ -349,33 +349,27 @@ hl.window_rule({
   persistent_size = true,
 })
 
--- Waydroid（Android 容器）原生窗口尺寸 = **1080x2400 的等比缩小**（比例保持 9:20）。
---   历史：2026-09-22 用户要求「固定窗口尺寸为 pixel7-panther 的屏幕尺寸」→ 定 405x900；
---         2026-09-29 用户要求「观感跟真机差不多」→ 改 **340x756**（= 405x900 等比 ×0.8395，比例不变）。
---   * **尺寸基准（2026-09-29 实测）**：显示器 AOC Q24G50F 物理 530x300mm + 2560x1440 ⇒ **122.7 ppi**
---     （1px ≈ 0.207mm）。宽 320 + 同比例 ≈ 真机屏幕物理尺寸（66×146mm）；宽 **340** ≈ 真机机身
---     （70×156mm vs Pixel 7 的 73×156mm）⇒ 「跟实际手机差不多」就取 320~340。
+-- Waydroid（Android 容器）原生窗口尺寸：**只能钉 405x900，别改成别的值**。
+--   * 405x900 = Waydroid 客户端自己算出的缩放（1080x2400 × 3/8，比例同为 9:20）。窗口尺寸由**客户端**决定，
+--     合成器强行改成别的值（2026-09-29 试过 340x756，比例一样是 9:20）时客户端**不重绘**，
+--     画面变成「放大后的左上角」一块（用户当天实测反馈）—— 别重犯。
+--   * 「窗口更小、观感像真机」要走 scrcpy 那条路：启动器条目的 `--window-width=340`，scrcpy 是把自己的
+--     画面缩放进窗口，任何尺寸都正确。
+--   * 尺寸基准（2026-09-29 实测）：显示器 AOC Q24G50F 物理 530x300mm + 2560x1440 ⇒ **122.7 ppi**
+--     （1px ≈ 0.207mm）⇒ 真机**屏幕** ≈ 320×706、真机**机身** ≈ 340×750。
 --   * 这与 Android 自己的输出分辨率是两件事：那个由 session 启动时的
---     `persist.waydroid.width/height` 决定（`waydroid prop set …` 后必须重启 session），
---     现在是 1080x2400 @345 —— **不要为了「窗口小」去改它**，手机端串流对齐的就是它。
+--     `persist.waydroid.width/height` 决定（现在 1080x2400 @345，手机端串流对齐的就是它），别为了窗口小去改它。
 --   * 静态 size 规则**会压过**上面那条 persistent-size 记忆（见 neovide 那段 A/B 实测），这正是这里想要的：
---     否则窗口会被「上次拖成多大」记走、尺寸飘。而且 **Waydroid 客户端不跟随拖动**（拖大只留透明区，
---     见 skill `nixos-waydroid`）⇒ 这个窗口只能钉死，不能靠拖，这正是它和 scrcpy 窗口的区别。
+--     而且 Waydroid 客户端不跟随拖动（拖大只留透明区，见 skill `nixos-waydroid`）⇒ 只能钉死。
 --   * **锁死靠的是 `min_size` + `max_size` 写成同一个值** —— 只写 `size` 不够：那只是「开窗时的初始尺寸」，
---     用户照样能用 SUPER+右键拖动改掉（2026-09-22 用户实测反馈）。两个约束相等后拖动 resize 会被钳制回来。
---     依据：Hyprland 0.55.4 的 window-rule 效果列表里就有 `max_size` / `min_size` / `keep_aspect_ratio`
---     （`src/desktop/rule/windowRule/WindowRuleEffectContainer.cpp`）。
---   * 实测（2026-09-29）：`hyprctl eval` 临时加同样的规则对**已经开着的**窗口立即生效（405x900 → 340x756，
---     grim 截图确认 UI 完整等比缩放、无裁切无黑边），`hyprctl reload` 即回到 config 里的值 ⇒ 改这个值安全可回退。
---   * 曾按字面钉成 1080x2400（Pixel 7 的真实像素尺寸），实测在 1440 高的屏上上下各伸出 480px
---     （`at: 740,-480`）还占掉近半屏幕，用户否了。1080x2400 只作 Android 内部渲染分辨率
---     （`persist.waydroid.width/height`），窗口另有其尺寸。
+--     用户照样能用 SUPER+右键拖动改掉（2026-09-22 用户实测反馈）。
+--   * 改完要 `nixos-rebuild switch` + `hyprctl reload`（`hyprctl eval` 可临时预览，reload 即回落）。
 hl.window_rule({
   name = "waydroid-pixel7-size",
   match = { class = "^Waydroid$" },
-  size = "340 756",
-  min_size = "340 756",
-  max_size = "340 756",
+  size = "405 900",
+  min_size = "405 900",
+  max_size = "405 900",
 })
 
 -- 所有 scrcpy 串流窗口（class = nix wrapper 名 `.scrcpy-wrapped`，BlissOS 与 Waydroid 两个条目共用）：

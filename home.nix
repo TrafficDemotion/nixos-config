@@ -731,16 +731,17 @@ in
     # （表现就是「启动器里点了没反应」）。
     # 这里显式 --no-audio；--tcpip 让它自己先 adb connect（设备是 TCP 5555，重启后不用手工连）。
     #
-    # `--window-width=340`（2026-09-29 用户要求「NixOS 这边观感投射在屏幕上的窗口大小和实际手机差不多」）：
-    #   * **只给宽度**，高度由 scrcpy 按画面比例自动算 —— 实测 408x900 → 340x750、1080x2400 → 340x755。
-    #   * **串流分辨率不受影响**（日志仍是 `Texture: 408x900` / `1080x2400`）：窗口只是把画面等比缩放进来看。
-    #   * 340 ≈ 70×156mm（本机显示器 122.7 ppi 实测）= Pixel 7 机身尺寸（73×156mm）；要严格等于真机
-    #     **屏幕**物理尺寸就用 320。等比拖动缩放靠 scrcpy 自带的窗口比例锁（默认开）+ hyprland.lua 的
+    # 窗口尺寸（2026-09-29 定稿）：**窗口宽 = 编码宽 = 1:1** —— 画面零重采样，最清晰。
+    #   * BlissOS 面板本身就是 408x900 ⇒ 窗口 408x900（`--window-width=408`）。
+    #   * **只给宽度**，高度由 scrcpy 按画面比例自动算；**串流分辨率本身不受影响**（日志仍打 `Texture: 408x900`）。
+    #   * 曾试 340x750（≈ 真机机身物理尺寸，本机显示器 122.7 ppi）：把 1080px 宽的 UI 压进 340px 必然丢细节，
+    #     用户反馈"很糊"。**这不是显示器分辨率上限，是缩放本身** ⇒ 想清晰就 1:1，别指望"真机大小 + 清晰"兼得。
+    #   * 等比拖动缩放靠 scrcpy 自带的窗口比例锁（默认开，反开关 `--no-window-aspect-ratio-lock`）+ hyprland.lua 的
     #     `scrcpy-keep-aspect` 规则 ⇒ 这里不写 `size` 规则（写了会压过「记住你拖过的尺寸」）。
     scrcpy = {
       name = "scrcpy (BlissOS)";
       comment = "Stream and control BlissOS VM107 (audio off, auto-connects 192.168.2.197:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --max-size=1280 --window-width=340";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --max-size=1280 --window-width=408";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
@@ -749,7 +750,7 @@ in
     scrcpy-console = {
       name = "scrcpy (BlissOS, console)";
       comment = "Same as above, but runs in a terminal (shows logs) and uses a real HID mouse (captured/relative mode - for games)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=uhid --max-size=1280 --window-width=340 --pause-on-exit=if-error";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.197:5555 --keyboard=uhid --mouse=uhid --max-size=1280 --window-width=408 --pause-on-exit=if-error";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = true;
@@ -757,15 +758,21 @@ in
     };
     # Waydroid（Android 容器，跑在同一台 NixOS 上）的串流目标：adb 走 waydroid0 网桥
     # 192.168.240.112:5555（= `waydroid adb connect` 给的地址），宿主直接可达。
-    #   * 窗口同样 `--window-width=340`（→ 340x755）；Android 侧保持 1080x2400 @345
-    #     ⇒ **手机端串流对齐真机 1080p 不受影响**（那条链路是 Android 的 Physical size 决定的）。
+    #   * 窗口 `--window-width=540` + `--max-size=540` ⇒ 窗口 **540x1200**，和编码同尺寸、**1:1 零重采样**（最清晰）。
+    #     Android 侧保持 1080x2400 @345 ⇒ **手机端串流对齐真机 1080p 不受影响**（那条链路是 Android 的
+    #     Physical size 决定的，且每个客户端各自建自己的镜像显示）。
+    #   * **`--max-size=540`（2026-09-29 实测后加，解决"明显掉帧"）**：Waydroid 镜像**没有硬件 H.264 编码器**
+    #     （`logcat -s scrcpy` 打 `HW encoders: []`），1080x2400 全靠软件编码 —— 实测持续拖动时
+    #     `media.swcodec` 吃 **264% CPU**（4 核只剩 8% idle），客户端只有 **23~48 fps**；
+    #     降到 540x1200 后编码 CPU 减半、**65~90 fps**。
+    #     （同理，手机端那 ~17fps 也是这个软件编码器的上限，不是链路问题。）
     #   * `--no-audio`：Waydroid 的音频本来就走宿主 PipeWire 出声，再让 scrcpy 抓一路会重复。
     #   * uhid 键鼠实测可用（容器内 `/dev/uhid` = `crw-rw---- uhid:uhid`，跑起来设备内出现
     #     `N: Name="scrcpy"` + `hid-generic … VIRTUAL HID Keyboard [scrcpy]`）。
     scrcpy-waydroid = {
       name = "scrcpy (Waydroid)";
       comment = "Stream and control Waydroid (Android container on this host, 192.168.240.112:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.240.112:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --window-width=340";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.240.112:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++++ --window-width=540 --max-size=540";
       icon = "scrcpy";
       categories = [ "Utility" "RemoteAccess" ];
       terminal = false;
