@@ -44,8 +44,13 @@ let
     dontConfigure = true;
     buildPhase = ''
       runHook preBuild
+      # 注意：kbuild 对 `M=` 外部模块会把 $(src) 求值成 `.`，上游 Kbuild 的
+      # KSU_KERNEL_DIR 因此算到内核源码树上去 ⇒ 必须显式传 src=<模块目录>。
+      # 工具链用宿主内核同款 gcc（NixOS 内核就是 gcc 编的）。
       make -C "${kernel.dev}/lib/modules/${modDir}/build" \
-        M="$PWD/kernel" modules \
+        M="$PWD/kernel" \
+        src="$PWD/kernel" \
+        modules \
         CONFIG_KSU=m \
         CONFIG_KSU_NON_ANDROID=y \
         CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER=y \
@@ -55,14 +60,12 @@ let
         # 编译时没有 .git ⇒ 退化成 fallback(1) 报 30001，管理器
         # (MINIMAL_SUPPORTED_KERNEL=33188) 会因此把模块管理 UI 整个关掉。
         # 3271 = waydroid-dev(2734bc6) 的真实提交序数 ⇒ 33271，与上游 manager
-        # 33267 同代。
+        # 33267 同代。KSU_GIT_VERSION_VALID=1 才是那个开关。
         KSU_GIT_VERSION=3271 \
         KSU_GIT_VERSION_VALID=1 \
         KSU_GIT_TAG=waydroid-dev-2026.08.19-r4 \
-        # kbuild 的 ccflags-y 不跨子 Makefile，core/ 等子目录编译时拿不到顶层
-        # Kbuild 的 -I ⇒ 用 KCFLAGS 把 include 路径全局带上。-include 是补
-        # 上游 runtime/waydroid_uts.c 缺的那个 #include <linux/rwsem.h>。
-        KCFLAGS="-include linux/rwsem.h -I$PWD/kernel -I$PWD/kernel/include"
+        KCFLAGS="-include linux/rwsem.h" \
+        -j$NIX_BUILD_CORES
       runHook postBuild
     '';
     installPhase = ''
