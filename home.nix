@@ -247,6 +247,11 @@ in
       bar.persistent = false;
       # 竖栏里的元素清单（2026-09-13 用户要求）：左上角的发行版图标（NixOS 雪花）与竖栏正中的
       # 「当前窗口图标 + 竖排标题」都关掉。两者分别是 entries 里的 logo 与 activeWindow。
+      # 2026-09-29：clock 也关掉 —— 竖栏时钟显示的是本机时区（America/New_York，UTC-4）的时间，
+      # 与本地（UTC+8）正好差 12 小时，看着像 12 小时制其实不是；用户要求干脆不显示。
+      # （想让竖栏重新有时钟：把下面 clock 那行 enabled 改回 true；想让它显示本地时间而不是
+      #  系统时区：`programs.caelestia.systemd.environment = [ "TZ=Asia/Singapore" ]`，外壳是普通
+      #  Qt 程序、只认进程 TZ，实测有效 —— 注意从外壳启动的应用会继承这个 TZ。）
       # ⚠️ 这是**整份清单替换上游默认值**，不是逐条覆盖：设置框架里 list 型选项一旦在 JSON 里
       # 出现就整体接管（plugin/src/Caelestia/Settings/listnode.cpp 的 syncJson → setValue("values")，
       # 且被覆盖后的元素不再有 fallback），所以必须把上游默认的九条按原顺序写全，只改 enabled。
@@ -263,7 +268,7 @@ in
         { id = "activeWindow"; enabled = false; }
         { id = "spacer"; enabled = true; }
         { id = "tray"; enabled = true; }
-        { id = "clock"; enabled = true; }
+        { id = "clock"; enabled = false; }
         { id = "statusIcons"; enabled = true; }
         { id = "power"; enabled = true; }
       ];
@@ -276,6 +281,7 @@ in
       # ── 2026-09-13 用户要求：Caelestia 图形设置里找得到的这批开关，全部写进声明 ──
       # （Nexus → Taskbar 各子页 / Services / Notifications；键名逐条对应如下）
       # Taskbar → Clock → "Show icon"：关。竖栏时钟只留时间文字，不画时钟图标。
+      # （2026-09-29 起该 entry 整块关闭，这条降级为「哪天把 clock 打开」时的行为声明。）
       bar.clock.showIcon = false;
       # Taskbar → Tray → "Background" 与 "Compact"：都开（托盘加底衬、紧凑排布）。
       bar.tray.background = true;
