@@ -44,6 +44,7 @@
   #     不依赖“直通核显的 HPD 中断进不了 guest”这个坑
   # EDID 是从 Windows 侧注册表 dump 出来的真实数据（256 字节，含 CTA 扩展块）。
   boot.kernelParams = [
+    "ibt=off"
     "drm.edid_firmware=HDMI-A-1:edid/aoc-q24g50f.bin"
     # video=...e：开机时就把 HDMI-A-1 强制置为「已连接」。
     # 必须两条一起用：连接器处于 disconnected 时 i915 根本不去读 EDID，
