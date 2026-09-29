@@ -349,7 +349,13 @@ hl.window_rule({
   persistent_size = true,
 })
 
--- Waydroid（Android 容器）原生窗口尺寸：**只能钉 405x900，别改成别的值**。
+-- 【2026-09-29 停用】Waydroid 的 HWC 原生窗口尺寸规则（下面那条已注释）。
+--   为什么停用：Android 的 UI 现在走 `waydroid-gamescope.service` 里的 **gamescope nested 输出**，
+--   HWC 那个原生窗口不再出现（窗口 class 从 `Waydroid` 变成 `gamescope`）。
+--   原样保留备查：万一手动 `systemctl --user start waydroid-session` 退回原生窗口，
+--   把下面那条取消注释即可（否则窗口会以 1080x2400 开出来、比屏幕还高）。
+--
+-- （历史说明）Waydroid（Android 容器）原生窗口尺寸：**只能钉 405x900，别改成别的值**。
 --   * 405x900 = Waydroid 客户端自己算出的缩放（1080x2400 × 3/8，比例同为 9:20）。窗口尺寸由**客户端**决定，
 --     合成器强行改成别的值（2026-09-29 试过 340x756，比例一样是 9:20）时客户端**不重绘**，
 --     画面变成「放大后的左上角」一块（用户当天实测反馈）—— 别重犯。
@@ -364,12 +370,23 @@ hl.window_rule({
 --   * **锁死靠的是 `min_size` + `max_size` 写成同一个值** —— 只写 `size` 不够：那只是「开窗时的初始尺寸」，
 --     用户照样能用 SUPER+右键拖动改掉（2026-09-22 用户实测反馈）。
 --   * 改完要 `nixos-rebuild switch` + `hyprctl reload`（`hyprctl eval` 可临时预览，reload 即回落）。
+-- hl.window_rule({
+--   name = "waydroid-pixel7-size",
+--   match = { class = "^Waydroid$" },
+--   size = "405 900",
+--   min_size = "405 900",
+--   max_size = "405 900",
+-- })
+
+-- gamescope 的外层窗口（承载 Waydroid 画面的那层，class = `gamescope`）：**拖动缩放时保持比例**。
+--   * 窗口比例永远 = 服务里的 nested 输出 1080x2400 = 9:20 ⇒ gamescope 的 `-S fit` 不会在窗口里留黑边。
+--   * 不写 `size`：初始尺寸由服务的 `-W 405 -H 900` 给；用户拖过的尺寸靠上面 `persistent-size` 那条记住。
+--   * 2026-09-29 实测：405x900 → 540x1200 改尺寸后画面仍完整（gamescope 自己重缩放，这与 HWC 原生窗口完全不同）。
+--   * 改完 `nixos-rebuild switch` **再 `hyprctl reload`**。
 hl.window_rule({
-  name = "waydroid-pixel7-size",
-  match = { class = "^Waydroid$" },
-  size = "405 900",
-  min_size = "405 900",
-  max_size = "405 900",
+  name = "gamescope-keep-aspect",
+  match = { class = "^gamescope$" },
+  keep_aspect_ratio = true,
 })
 
 -- 所有 scrcpy 串流窗口（class = nix wrapper 名 `.scrcpy-wrapped`，BlissOS 与 Waydroid 两个条目共用）：

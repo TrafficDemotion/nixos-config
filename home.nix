@@ -1,4 +1,4 @@
-{ pkgs, inputs, config, ... }:
+{ pkgs, inputs, config, lib, ... }:
 
 let
   # ── Neovim 插件清单（交给 lazy.nvim 加载，见 programs.neovim 那段的说明）──
@@ -390,13 +390,22 @@ in
   # 会被一起 SIGTERM。改成只终止主进程（qs 自己），已开的应用留着。
   systemd.user.services.caelestia.Service.KillMode = "process";
 
-  # ── Waydroid 会话自启动（2026-09-22 用户要求）──
-  # Android 容器那一半是系统服务（waydroid-container.service，NixOS 模块已 enable），
-  # 但「会话」那一半是用户级的：不写这条就得每次手动 `waydroid session start`。
-  # 挂在 graphical-session.target 上 —— 本机是 uwsm 会话，实测该 target 是 active
-  # （`systemctl --user list-units --type=target | grep graphical`），而且 uwsm 把
-  # WAYLAND_DISPLAY=wayland-1 / XDG_RUNTIME_DIR 导进了 systemd user 环境
-  # （`systemctl --user show-environment` 可见），所以 waydroid 连得上合成器。
+  # ── Waydroid 会话（用户级那一半）──
+  # Android 容器那一半是系统服务（waydroid-container.service，NixOS 模块已 enable）；
+  # 「会话」那一半是用户级的，它决定 Android 的 UI 画到**哪张 Wayland socket** 上。
+  # 挂在 graphical-session.target 之后起步：本机是 uwsm 会话，实测该 target 是 active，
+  # 且 uwsm 把 WAYLAND_DISPLAY=wayland-1 / XDG_RUNTIME_DIR 导进了 systemd user 环境
+  # （`systemctl --user show-environment` 可见），所以手动起它时 waydroid 连得上宿主合成器。
+  #
+  # 【2026-09-29 起本单元不再自启动】session 交给下面的 `waydroid-gamescope.service` 独家负责
+  # （它先起 gamescope，再在 gamescope 给的内层 socket 下起 session）。原因：
+  # container 里那张 wayland socket 的绑定由【session 启动时的 WAYLAND_DISPLAY】决定，
+  # 两个 session 抢同一张 socket 会让 container 落在错的那张上 ⇒
+  # 症状 = gamescope 窗口空白/消失、画面退回宿主上那个"只能 1:1 发布 surface、比分辨率小就裁左上角"
+  # 的原生窗口（2026-09-29 实测踩过两次；根因＝我误用了 `pkill -x gamescope`（匹配不到）留下的
+  # 残留 gamescope 实例 + 孤儿 session 进程）。
+  # 本单元保留作**手动回退**：`systemctl --user start waydroid-session` 会退回原生窗口
+  # （那时把 hyprland.lua 里 `waydroid-pixel7-size` 那条规则取消注释，否则窗口会以 1080x2400 开出来）。
   # UI 不自动弹（要不要看随你）：需要时点启动器里的 "Waydroid"（包自带 Waydroid.desktop）
   # 或跑 `waydroid show-full-ui`。
   systemd.user.services.waydroid-session = {
@@ -413,13 +422,95 @@ in
       # （`tools/actions/session_manager.py:73-80`）：先问**宿主**的 `ro.sf.lcd_density`
       # —— 宿主是 NixOS，没有 getprop，得到空串 → 落到 `GRID_UNIT_PX` 环境变量，
       # **dpi = GRID_UNIT_PX × 20** → 都没有才写 "0" 让 Android 自己决定。
-      # 8 × 20 = 160 dpi。为什么要 160：Android 的输出分辨率必须**等于窗口尺寸**
-      # （见 hyprland.lua 里 waydroid-pixel7-size 那条规则 —— 窗口比分辨率小是「裁剪」不是
-      # 缩放，实测 405x900 的窗口配 1080x2400 只显示左上角一块），现在的组合是
-      # 分辨率 405x900 + 窗口 405x900；160dpi 下 1dp = 1px ⇒ 逻辑宽度 405dp，
-      # Pixel 7（panther）是 411dp（1080px / 420dpi × 160），手机布局观感一致。
+      # 8 × 20 = 160 dpi，这是「没有覆盖值时」的基准密度（Android 侧现在实际生效的是覆盖值 345，
+      # 见 /data/system/display_settings.xml）；160dpi 下 1dp = 1px。
+      # 显示分辨率不在这里定，由 `persist.waydroid.width/height` 决定（现在 1080x2400）；
+      # 「窗口能自由缩放」由 waydroid-gamescope.service 那层 gamescope 负责（见下面那段）。
       # ⚠️ 别走 `persist.waydroid.lcd_density` 那个 prop —— 实测设了也不会被读，生效的仍是 ro.sf.lcd_density。
       Environment = [ "GRID_UNIT_PX=8" ];
+    };
+    # 不再自启动（理由见上面那段注释）：session 归 waydroid-gamescope.service 管。
+    Install.WantedBy = lib.mkForce [ ];
+  };
+
+  # ── Waydroid UI 的「缩放层」：gamescope nested（2026-09-29 用户要求固化）──
+  # 要解决的矛盾：Android 侧必须保持真机 **1080x2400**（手机端串流对齐真机 1080p，
+  # 由 persist.waydroid.width/height 决定），而桌面侧的窗口要能任意大小、画面还得**完整**。
+  # HWC 自己那个"原生窗口"做不到：它按显示像素 1:1 发布 surface，合成器只能裁
+  # （窗口小于分辨率 = 只剩左上角一块；窗口大于 = 多余区域透明）。
+  # 做法：中间插一层会缩放的合成器 —— gamescope 建一个 nested 输出 1080x2400
+  # （= Android 的分辨率，HWC 看到的就是 1:1 正确的），由 GPU 把整屏缩到外层窗口 405x900；
+  # 窗口尺寸随你拖，画面跟着重缩放。此时 Android 的显示分辨率、给手机端的流都不变。
+  # 实测要点（2026-09-29）：
+  #   * 内层 socket 名由 gamescope 自己递增（gamescope-0/1/2…），**没有 --socket-name 之类开关**
+  #     ⇒ 只能"先起 gamescope、由它的子进程起 session"（gamescope 会给子进程设
+  #     `WAYLAND_DISPLAY=gamescope-N`，实测内层读到 gamescope-2），所以这里把 session
+  #     包在 gamescope 的 `--` 里，而不是让 waydroid-session.service 自己去起。
+  #   * `-r 144` = nested 输出的刷新率。写 60 时 Android 的 activeMode 也变 60Hz
+  #     （`dumpsys SurfaceFlinger` 的 vsyncRate），输入到画面最多多等约 16ms
+  #     —— 用户体感"比原生窗口慢半拍"；与宿主 144Hz 对齐后这个差别就没了。
+  #   * 进程名坑：`pkill -x gamescope` / `pgrep -x gamescope` **匹配不到**
+  #     （要用 `-f` 匹配 store 路径里的 `bin/gamescope`）—— 当天因此堆了 3 个 gamescope 实例，
+  #     且残留的孤儿 session 让新 session 只回 "Session is already running"、
+  #     container 继续绑旧 socket ⇒ 画面退回裁切的原生窗口。所以 ExecStartPre 必须先清场。
+  #   * 代价：比原生窗口多一层合成（GPU 上复合 1080x2400 再缩放），换来尺寸自由。
+  #     原生窗口仍是最快的一档，但它只能看左上角裁切的一块（除非把 Android 分辨率降到窗口尺寸，
+  #     那样手机端就不是 1080p 了）。
+  systemd.user.services.waydroid-gamescope = let
+    # 起之前清场：残留的 gamescope 实例 + 孤儿 session（否则抢 socket，见上面说明）。
+    preScript = pkgs.writeShellScript "waydroid-gamescope-pre" ''
+      set -u
+      export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      systemctl --user stop waydroid-session 2>/dev/null || true
+      pkill -f "bin/gamescope" 2>/dev/null || true
+      pkill -f "waydroid.py-wrapped session start" 2>/dev/null || true
+      i=0
+      while [ "$i" -lt 20 ]; do
+        if ! pgrep -f "bin/gamescope" >/dev/null 2>&1 && ! pgrep -f "waydroid.py-wrapped session start" >/dev/null 2>&1; then
+          break
+        fi
+        sleep 1
+        i=$((i + 1))
+      done
+      sleep 1
+    '';
+    # gamescope 的**子进程**：跑在 gamescope 给的内层 WAYLAND_DISPLAY 上，session 一起
+    # 就把 container 那张 wayland socket 绑到 gamescope 上；最后 wait 住 session
+    # （session 死 ⇒ 本脚本退出 ⇒ gamescope 退出 ⇒ systemd 按 Restart 重启整条链）。
+    innerScript = pkgs.writeShellScript "waydroid-gamescope-session" ''
+      set -u
+      waydroid="${pkgs.waydroid-nftables}/bin/waydroid"
+      # 与原来 waydroid-session.service 一致：dpi = GRID_UNIT_PX × 20 = 160
+      # （Android 侧实际生效的是覆盖值 345，见 /data/system/display_settings.xml）
+      export GRID_UNIT_PX=8
+      "$waydroid" session start &
+      session_pid=$!
+      i=0
+      while [ "$i" -lt 90 ]; do
+        "$waydroid" status 2>/dev/null | grep -q "Session:.*RUNNING" && break
+        sleep 1
+        i=$((i + 1))
+      done
+      sleep 3
+      # session（重）启动会把 adbd 停掉 —— 手机端 scrcpy 靠它，这里补起来。
+      /run/wrappers/bin/sudo -n "$waydroid" shell -- setprop ctl.start adbd >/dev/null 2>&1 || true
+      "$waydroid" show-full-ui >/dev/null 2>&1 &
+      wait "$session_pid"
+    '';
+  in {
+    Unit = {
+      Description = "Waydroid UI on a gamescope nested output (Android stays 1080x2400; window is freely resizable)";
+      After = [ "graphical-session.target" ];
+      PartOf = [ "graphical-session.target" ];
+    };
+    Service = {
+      ExecStartPre = "${preScript}";
+      # nested 输出 1080x2400@144 → 外层窗口 405x900（初始尺寸；之后随你拖，
+      # 比例由 hyprland.lua 的 gamescope-keep-aspect 保持）。
+      # -S fit -F linear = 等比缩放 + 线性过滤。
+      ExecStart = "${pkgs.gamescope}/bin/gamescope --backend wayland --expose-wayland -w 1080 -h 2400 -r 144 -W 405 -H 900 -S fit -F linear --force-windows-fullscreen -- ${innerScript}";
+      Restart = "always";
+      RestartSec = 3;
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
