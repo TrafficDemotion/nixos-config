@@ -487,6 +487,25 @@ in
       fi
       sleep 1
     '';
+    # 链停下来时（关窗、崩溃、systemctl stop 都算）把 session 一并收干净。
+    # 为什么需要：gamescope 退出只带走它的子进程，session 那个 python 会变成孤儿继续占着
+    # D-Bus 名 id.waydro.Session ⇒ 下次唤起前多一步清理，而且中间那段时间状态是"半死"
+    # （container 的 socket 指向已经没了的 gamescope）。
+    stopScript = pkgs.writeShellScript "waydroid-gamescope-stop" ''
+      set -u
+      export XDG_RUNTIME_DIR="''${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+      waydroid="${pkgs.waydroid-nftables}/bin/waydroid"
+      "$waydroid" session stop >/dev/null 2>&1 || true
+      sleep 2
+      # 兜底：Waydroid daemonize 后 cmdline 不带 "session start"，两种形态都要覆盖
+      pkill -f "\.waydroid\.py-wrapped( session start)?$" 2>/dev/null || true
+      i=0
+      while [ "$i" -lt 20 ]; do
+        busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus GetNameOwner s id.waydro.Session >/dev/null 2>&1 || break
+        sleep 1
+        i=$((i + 1))
+      done
+    '';
     # gamescope 的**子进程**：跑在 gamescope 给的内层 WAYLAND_DISPLAY 上，session 一起
     # 就把 container 那张 wayland socket 绑到 gamescope 上；最后 wait 住 session
     # （session 死 ⇒ 本脚本退出 ⇒ gamescope 退出 ⇒ systemd 按 Restart 重启整条链）。
@@ -535,16 +554,18 @@ in
     };
     Service = {
       ExecStartPre = "${preScript}";
+      ExecStopPost = "${stopScript}";
       # nested 输出 1080x2400@144 → 外层窗口 405x900（初始尺寸；之后随你拖，
       # 比例由 hyprland.lua 的 gamescope-keep-aspect 保持）。
       # -S fit -F linear = 等比缩放 + 线性过滤。
       ExecStart = "${pkgs.gamescope}/bin/gamescope --backend wayland --expose-wayland -w 1080 -h 2400 -r 144 -W 405 -H 900 -S fit -F linear --force-windows-fullscreen -- ${innerScript}";
-      # Restart=always + 10s：**关掉窗口等于关掉这条链**（gamescope 干净退出），
-      # 而我们必须让它自己回来 —— 2026-09-29 实测：用 on-failure 时用户关窗后服务停在 inactive，
-      # 再用 launcher 打开就落到宿主 socket 上、变成"显示器比例小窗 + 放大的左上角"（见下面
-      # waydroid.desktop 那条注释）。防循环交给 [Unit] 的 StartLimit*；10s 间隔也留出人工
-      # `systemctl --user stop waydroid-gamescope` 的时间（容器 wedge 时别让它高频重启）。
-      Restart = "always";
+      # Restart=on-failure：**关窗就是关掉**（2026-09-29 用户选定的行为 B）——
+      # 用户关 gamescope 窗口时 gamescope 干净退出（exit 0）⇒ 不自动回来；要用时点 launcher 的
+      # Waydroid 条目（= systemctl --user start waydroid-gamescope）唤起，窗口仍是规则钉的 405x900。
+      # session 掉线 / gamescope 崩溃是非零退出 ⇒ 仍会被拉起（on-failure）。
+      # 代价（用户已知并接受）：关着的时候 container 会 FROZEN，Pixel 端串流也一起不可用。
+      # 防循环交给 [Unit] 的 StartLimit*；10s 间隔也留出人工介入时间。
+      Restart = "on-failure";
       RestartSec = 10;
     };
     Install.WantedBy = [ "graphical-session.target" ];
