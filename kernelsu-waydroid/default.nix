@@ -57,8 +57,12 @@ let
         # 3271 = waydroid-dev(2734bc6) 的真实提交序数 ⇒ 33271，与上游 manager
         # 33267 同代。
         KSU_GIT_VERSION=3271 \
+        KSU_GIT_VERSION_VALID=1 \
         KSU_GIT_TAG=waydroid-dev-2026.08.19-r4 \
-        KCFLAGS="-include linux/rwsem.h"
+        # kbuild 的 ccflags-y 不跨子 Makefile，core/ 等子目录编译时拿不到顶层
+        # Kbuild 的 -I ⇒ 用 KCFLAGS 把 include 路径全局带上。-include 是补
+        # 上游 runtime/waydroid_uts.c 缺的那个 #include <linux/rwsem.h>。
+        KCFLAGS="-include linux/rwsem.h -I$PWD/kernel -I$PWD/kernel/include"
       runHook postBuild
     '';
     installPhase = ''
