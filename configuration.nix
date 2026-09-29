@@ -154,7 +154,7 @@
   # 所以这里直接换掉：waydroid-nftables 就是官方
   # `waydroid.override { withNftables = true }`（build 时 USE_NFTABLES=1，脚本改用 nft）。
   virtualisation.waydroid.package = pkgs.waydroid-nftables;
-\n  # KernelSU-Next 宿主侧（声明式，见 kernelsu-waydroid/default.nix）
+  # KernelSU-Next 宿主侧（声明式，见 kernelsu-waydroid/default.nix）
   services.kernelsu-waydroid.enable = true;
 
   # ═══════════ Android 侧 root = Magisk（Kitsune Mask），不再碰宿主内核 ═══════════
