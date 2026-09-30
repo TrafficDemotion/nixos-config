@@ -27,18 +27,40 @@ mark_start_failed() {
     exit "$status"
 }
 
-# lxc.hook.pre-start runs before Android init exists. A teardown queued by
-# lxc.hook.post-stop runs asynchronously (oneshot + timer, ~2-4s), so an
-# Android-initiated restart asks for the next start while lifecycle is still
-# stop-pending. Refusing there strands the container for good: Waydroid does not
-# retry a failed lxc-start. So wait for the lifecycle to settle instead.
+# lxc.hook.pre-start runs before Android init exists, and Android needs KernelSU
+# loaded before its init runs. A transition can be pending here for two reasons,
+# and they need opposite handling:
+#
+#   * a teardown queued by lxc.hook.post-stop. It can NEVER complete while this
+#     start is alive: the unload script requires LXC to be STOPPED *and* no
+#     lxc-start process, and this hook is itself a child of lxc-start. Waiting for
+#     it is a deadlock — an Android-initiated restart asks for the next start in
+#     the same second as the stop (tools/services/hardware_manager.py
+#     shutdownRequest), and the queued unload only ever ran after our exit.
+#     So when the loaded module is still armed, keep it and continue: the module
+#     finds /system/bin/init dynamically and the reuse path (sync-brene-uts +
+#     configure-osrelease apply) is the per-session setup. The queued unload then
+#     observes a non-pending state and no-ops.
+#   * a real detach (prepare_unload == Y): that module is half torn down, so it can
+#     neither be reused nor have a fresh one loaded on top. Wait (bounded) for the
+#     unload to finish; Waydroid only gives the container ~10s to reach RUNNING
+#     (tools/helpers/lxc.py wait_for_running) and loading costs ~1s.
+#
+# Only the lock is shared with the unload script, and it is never held while
+# waiting — holding it would starve the very teardown we are waiting for.
 mkdir -p -m 0755 "$state_dir"
 trap mark_start_failed ERR
 
-# Never hold the lock while waiting: the unload script takes the same flock to
-# make progress, so holding it would starve the teardown. Budget matters —
-# Waydroid only waits ~10s for the container to reach RUNNING
-# (tools/helpers/lxc.py wait_for_running) and loading the module costs ~1s.
+prepare_unload=/sys/module/kernelsu/parameters/prepare_unload
+
+module_loaded() {
+    grep -q '^kernelsu ' /proc/modules
+}
+
+module_armed() {
+    [[ -r $prepare_unload ]] && [[ $(<"$prepare_unload") != Y ]]
+}
+
 wait_deadline=$((SECONDS + 6))
 lock_busy=0
 wait_logged=0
@@ -50,18 +72,19 @@ while :; do
             unloaded|unknown)
                 break
                 ;;
-            stop-pending|unhook-pending|unload-pending)
-                # Teardown already reached its goal; only its bookkeeping lags.
-                if ! grep -q '^kernelsu ' /proc/modules; then
-                    log "module already unloaded while lifecycle is ${state}; starting anyway"
+            stop-pending|unhook-pending|unload-pending|stop-failed|starting|running)
+                if ! module_loaded; then
+                    log "module already gone while lifecycle is ${state}; loading fresh"
+                    break
+                fi
+                if module_armed; then
+                    log "lifecycle is ${state} but the loaded module is armed and its teardown cannot run during a start; reusing it"
                     break
                 fi
                 if (( ! wait_logged )); then
-                    log "lifecycle is ${state}; waiting for teardown to finish"
+                    log "lifecycle is ${state} and the module is mid-detach; waiting for teardown to finish"
                     wait_logged=1
                 fi
-                ;;
-            stop-failed|starting|running)
                 ;;
             *)
                 echo "${0##*/}: invalid lifecycle state: ${state}" >&2
