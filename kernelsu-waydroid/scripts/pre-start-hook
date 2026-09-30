@@ -27,34 +27,64 @@ mark_start_failed() {
     exit "$status"
 }
 
-# lxc.hook.pre-start runs before Android init exists. A start is never queued
-# behind another lifecycle transition: it is accepted only from UNLOADED.
+# lxc.hook.pre-start runs before Android init exists. A teardown queued by
+# lxc.hook.post-stop runs asynchronously (oneshot + timer, ~2-4s), so an
+# Android-initiated restart asks for the next start while lifecycle is still
+# stop-pending. Refusing there strands the container for good: Waydroid does not
+# retry a failed lxc-start. So wait for the lifecycle to settle instead.
 mkdir -p -m 0755 "$state_dir"
 trap mark_start_failed ERR
 
-exec 9>"$lock_file"
-if ! flock -n 9; then
-    state=$(read_state)
-    echo "${0##*/}: lifecycle is ${state}; start refused until UNLOADED" >&2
-    log "start refused while lifecycle is ${state}"
-    exit 4
-fi
+# Never hold the lock while waiting: the unload script takes the same flock to
+# make progress, so holding it would starve the teardown. Budget matters —
+# Waydroid only waits ~10s for the container to reach RUNNING
+# (tools/helpers/lxc.py wait_for_running) and loading the module costs ~1s.
+wait_deadline=$((SECONDS + 6))
+lock_busy=0
+wait_logged=0
+while :; do
+    lock_busy=0
+    if exec 9>"$lock_file" && flock -n 9; then
+        state=$(read_state)
+        case $state in
+            unloaded|unknown)
+                break
+                ;;
+            stop-pending|unhook-pending|unload-pending)
+                # Teardown already reached its goal; only its bookkeeping lags.
+                if ! grep -q '^kernelsu ' /proc/modules; then
+                    log "module already unloaded while lifecycle is ${state}; starting anyway"
+                    break
+                fi
+                if (( ! wait_logged )); then
+                    log "lifecycle is ${state}; waiting for teardown to finish"
+                    wait_logged=1
+                fi
+                ;;
+            stop-failed|starting|running)
+                ;;
+            *)
+                echo "${0##*/}: invalid lifecycle state: ${state}" >&2
+                log "start refused because lifecycle state is invalid: ${state}"
+                exit 6
+                ;;
+        esac
+        exec 9>&-    # release before sleeping so the unload script can finish
+    else
+        lock_busy=1
+    fi
 
-state=$(read_state)
-case $state in
-    unloaded|unknown)
-        ;;
-    stop-pending|unhook-pending|unload-pending|stop-failed|starting|running)
-        echo "${0##*/}: lifecycle is ${state}; start refused" >&2
+    if ((SECONDS >= wait_deadline)); then
+        state=$(read_state)
+        echo "${0##*/}: lifecycle is ${state}; start refused until UNLOADED" >&2
         log "start refused while lifecycle is ${state}"
+        if ((lock_busy)); then
+            exit 4
+        fi
         exit 5
-        ;;
-    *)
-        echo "${0##*/}: invalid lifecycle state: ${state}" >&2
-        log "start refused because lifecycle state is invalid: ${state}"
-        exit 6
-        ;;
-esac
+    fi
+    sleep 0.25
+done
 
 printf 'starting\n' > "$state_file"
 
