@@ -943,6 +943,44 @@ in
       settings.StartupNotify = "false";
     };
 
+    # ── redroid（OCI Always Free A1 上的 Android 容器）的串流目标 ──
+    # 拓扑：客户端 → `ssh -L 5556:127.0.0.1:5555 oci-a1-tail`（ProxyJump: OpenWrt → Tailscale）→
+    #   VPS 上 docker 容器 redroid14-ksu（Android 14, arm64）的 adbd。
+    # 为什么必须先建隧道：容器 ADB **只绑 VPS 的 127.0.0.1:5555**（官方明令不许暴露公网），
+    #   所以 scrcpy 不能像 BlissOS/Waydroid 那样直接 `--tcpip=<IP>` 过去。
+    #   `ssh -f -N` 后台建隧道（`-o ExitOnForwardFailure=yes`：若 5556 已被占用说明隧道已在，
+    #   ssh 立刻退出、不留垃圾进程），随后 `--tcpip=127.0.0.1:5556` 会让 scrcpy 自己先 adb connect。
+    # 三个关键参数（2026-09-28 排查定稿，详见 ~/Downloads/redroid-scrcpy-stutter-20260928.md）：
+    #   * `--video-buffer=200` —— **卡顿的真正解药**。跨洋 RTT ~300ms，帧是**成团到达**的，
+    #     scrcpy 默认把"到晚了"的帧成批丢弃 ⇒ 客户端显示帧率塌到个位数（日志里成片
+    #     `N fps (+M frames skipped)`）。加 200ms 缓冲改为按帧时间戳平滑播放 ⇒ 同一负载实测
+    #     14–27 fps。代价只有 +200ms 延迟（跨洋本身已 300ms，很划算）。嫌顿可调到 300。
+    #   * `--max-fps=30 --video-bit-rate=4M` —— 该容器**无 GPU**（SwiftShader 软件渲染 + 软件编码），
+    #     只有 2 vCPU；实测码率需求仅 65–162 kbps，4M 是上限而非负担。
+    #   * `--window-width=400` —— 设备分辨率是 **400x896（宽高必须 16 对齐，否则 H.264 编码器
+    #     直接 EINVAL、帧率掉到个位数）**，窗口 1:1 ⇒ 零重采样最清晰；等比拖动缩放靠 scrcpy
+    #     自带的窗口比例锁 + hyprland.lua 的 `scrcpy-keep-aspect` 规则。
+    #   注意：设备画面是**按需出帧**的，静止时 `--print-fps` 显示 0 fps 属正常（不是卡死）。
+    scrcpy-redroid = {
+      name = "scrcpy (redroid VPS)";
+      comment = "Stream the redroid Android 14 container on the OCI VPS (auto-builds the SSH tunnel)";
+      exec = "sh -c \"ssh -f -N -o ExitOnForwardFailure=yes -o ConnectTimeout=12 -o ServerAliveInterval=20 -L 5556:127.0.0.1:5555 oci-a1-tail; exec ${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=127.0.0.1:5556 --mouse=sdk --max-fps=30 --video-bit-rate=4M --video-buffer=200 --window-width=400\"";
+      icon = "scrcpy";
+      categories = [ "Utility" "RemoteAccess" ];
+      terminal = false;
+      settings.StartupNotify = "false";
+    };
+    # 同上，但在终端里跑：能看日志、带 `--print-fps`（每秒钟打一次实际帧率，排查卡顿时用）。
+    scrcpy-redroid-console = {
+      name = "scrcpy (redroid VPS, console)";
+      comment = "Same as above but in a terminal (shows logs + live fps counter)";
+      exec = "sh -c \"ssh -f -N -o ExitOnForwardFailure=yes -o ConnectTimeout=12 -o ServerAliveInterval=20 -L 5556:127.0.0.1:5555 oci-a1-tail; exec ${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=127.0.0.1:5556 --mouse=sdk --max-fps=30 --video-bit-rate=4M --video-buffer=200 --window-width=400 --print-fps --pause-on-exit=if-error\"";
+      icon = "scrcpy";
+      categories = [ "Utility" "RemoteAccess" ];
+      terminal = true;
+      settings.StartupNotify = "false";
+    };
+
     # 覆盖包自带的 `Waydroid.desktop`（同名 + HM 的 applications 目录优先级更高 ⇒ 盖住系统那份）。
     # 包自带那条的 Exec 是**裸 `waydroid`**（点了基本等于没反应）；而 Android 应用那些
     # `waydroid.<包名>.desktop` 是 Waydroid 运行时生成在 ~/.local/share/applications 里的，改不了 ——
