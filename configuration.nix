@@ -178,19 +178,28 @@
     fi
   '';
 
-  # ═══════════ Android 侧 root = Magisk（Kitsune Mask），不再碰宿主内核 ═══════════
-  # 2026-09-25：原来「把 KernelSU 编成宿主内核模块 + modloader 装载」那条路已删除
-  # （原配置见 git 历史；pkgs/kernelsu-waydroid.nix、pkgs/modloader.nix 两个文件也已删）。
-  # 起因：该 LKM 在 6.18.48 上已经加载不起来（modloader: Cannot find symbol:
-  # ext4_unregister_sysfs），而且 KernelSU 侧的 Zygisk（ZN / ReZygisk）在这台
-  # Waydroid 里注入不进去。
-  #
-  # 现状：Waydroid 的 root 由 Kitsune Mask（Magisk Delta 26.3.1）提供，它是在
-  # Android 系统层做的注入（/system/etc/init/bootanim.rc + /data/adb/magisk），
-  # **宿主侧零配置**，所以这里既没有 boot.extraModulePackages 也没有加载服务。
-  # Zygisk 用 Magisk 自带的（magisk.db 里 zygisk=1），LSPosed 以 Magisk 模块形式加载，
-  # Iconify / Integrity Box 等也一并迁到了 Magisk 模块目录。
-  # 装法、踩坑与回滚：见 skill `nixos-waydroid`。
+  # ═══════ Android 侧 root = KernelSU-Next（声明式，宿主侧由 kernelsu-waydroid/ 提供）═══════
+  # 2026-09-29：root 从 Kitsune Mask（Magisk Delta 26.3.1）换成 KernelSU-Next。
+  # 换的原因：Kitsune 那套是 **Android 系统层注入**（overlay 的
+  # system/etc/init/bootanim.rc + /data/adb/magisk），装完还得手工 chmod 755，而且
+  # Zygisk 只有 canary 版才真能注入 app 进程（稳定版只进 system_server，管理器永远
+  # 显示未激活）；KSU-Next 走 waydroid 专用外挂模块
+  # （incapdns/KernelSU-Next-Waydroid 的 kernelsu.ko，**不重编宿主内核**）。
+  # 现状（全部由 kernelsu-waydroid/default.nix 声明，本文件只开 enable）：
+  #   * ko 按当前内核现编；lxc 的 pre-start hook 在容器起来前用 modloader 装载；
+  #     卸载走 kernelsu-waydroid-unload unit + timer；
+  #   * Magisk 那套（overlay 的 bootanim.rc / magisk / sbin、/data/adb/magisk）已删除，
+  #     /data/adb/modules/* 被 KSU 原样复用（Iconify 等 overlay 仍然生效）；
+  #   * Zygisk 用 Zygisk Next 1.5.0（两个 zygote 都注入 ✓），Xposed 用 Vector 2.2
+  #     （LSPosed 系，管理器包名 org.matrix.vector.manager）。
+  # ⚠️ 该模块的 x86 inline hook 与 CONFIG_X86_KERNEL_IBT=y 冲突（kernel BUG at
+  #   arch/x86/kernel/cet.c:133，而 IBT 没有运行时开关），所以 boot.kernelParams 里
+  #   必须有 `ibt=off`。
+  # ⚠️ 容器重启后 KSU 的 teardown 会把 lifecycle 停在 unload-pending，pre-start 随即
+  #   拒绝起容器（start refused while lifecycle is unload-pending）。恢复顺序：
+  #   停 session → 反复跑 /etc/kernelsu-next-waydroid/unload 直到 kernelsu 从
+  #   /proc/modules 消失 → **先起 session**（它拉起容器并重装 ko）。
+  # 装法、踩坑与回滚：见 skill `nixos-waydroid`（含 references/kernelsu-next-declarative.md）。
 
   # ═══════════════════════════ 蓝牙 ═══════════════════════════
   # 主板的 Intel AX210 蓝牙是 USB 直通进来的（8087:0032，driver = btusb），
