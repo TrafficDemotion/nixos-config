@@ -157,6 +157,27 @@
   # KernelSU-Next 宿主侧（声明式，见 kernelsu-waydroid/default.nix）
   services.kernelsu-waydroid.enable = true;
 
+  # ⚠️ 容器网络必须显式给地址（否则 Android 完全出不了网）。
+  # 镜像自带的 /vendor/bin/waydroid-init（由 /vendor/etc/init/waydroid-init.rc 的
+  # `on post-fs-data` 触发，每次 Android 启动跑一次）会**读 /proc/net/route 推导**
+  # Android 的以太网配置，写进 /data/misc/ethernet/ipconfig.txt 和
+  # /data/misc/apexdata/com.android.tethering/misc/ethernet/ipconfig.txt。
+  # 而 Waydroid 1.6.3 的 tools/helpers/lxc.py **不写 lxc.net.0.ipv4.***，
+  # 容器启动时既没地址也没路由 → 推导失败 → 回退到硬编码的
+  # `172.16.0.2/16` + 网关 `172.16.0.1`（该网段根本没有网关；宿主的 masquerade 也
+  # 只覆盖 192.168.240.0/24）→ 容器彻底没网：microG 连不上 Google、Aurora 说离线、
+  # app 内登录失败，而宿主侧一切正常。
+  # 所以每次容器启动前，把静态地址补进 lxc 配置，让 waydroid-init 每次都能推导出正确结果。
+  # 容器 config 每次由 session 重写，因此必须挂在 preStart —— 与 KernelSU 的 hook
+  # 注册同一个时机（见 kernelsu-waydroid/default.nix）。
+  systemd.services.waydroid-container.preStart = lib.mkAfter ''
+    cfg=/var/lib/waydroid/lxc/waydroid/config
+    if ! grep -q '^lxc.net.0.ipv4.address' "$cfg"; then
+      sed -i '/^lxc.net.0.link = waydroid0$/a lxc.net.0.ipv4.address = 192.168.240.112/24' "$cfg"
+      sed -i '\|^lxc.net.0.ipv4.address = 192.168.240.112/24$|a lxc.net.0.ipv4.gateway = 192.168.240.1' "$cfg"
+    fi
+  '';
+
   # ═══════════ Android 侧 root = Magisk（Kitsune Mask），不再碰宿主内核 ═══════════
   # 2026-09-25：原来「把 KernelSU 编成宿主内核模块 + modloader 装载」那条路已删除
   # （原配置见 git 历史；pkgs/kernelsu-waydroid.nix、pkgs/modloader.nix 两个文件也已删）。
