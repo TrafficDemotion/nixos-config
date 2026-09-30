@@ -22,6 +22,14 @@
   nixpkgs.overlays = [
     (final: prev: {
       sunshine = inputs.nixpkgs-unstable.legacyPackages.${pkgs.stdenv.hostPlatform.system}.callPackage ./pkgs/sunshine.nix { };
+      # gamescope：同样借 unstable 的包（只为这一个包，不动系统 nixpkgs）。
+      # 原因：26.05 钉在 3.16.23（2026-04 的 tag），缺上游 PR #2246 对 SDLBackend 的修复
+      # ⇒ 关窗时必 SIGABRT（~CSDLBackend 里 m_SDLThread 是 joinable std::thread，析构即
+      # terminate；栈 ~CSDLBackend ← IBackend::Set ← steamcompmgr_exit），systemd 因此把
+      # 「关窗」当成 failure；unstable（flake.lock 那个 rev）已是 3.16.28。
+      # 实测：这 79 个依赖路径全部命中 cache.nixos.org，无需本地编译。
+      # 回滚：删掉下面这一行即可回到系统 nixpkgs 的 3.16.23。
+      gamescope = inputs.nixpkgs-unstable.legacyPackages.${pkgs.stdenv.hostPlatform.system}.gamescope;
     })
   ];
 
