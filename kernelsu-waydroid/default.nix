@@ -119,7 +119,13 @@ in
     systemd.services.kernelsu-waydroid-unload = {
       description = "Safely reconcile KernelSU unload after Waydroid teardown";
       after = [ "waydroid-container.service" ];
-      path = with pkgs; [ coreutils util-linux procps lxc bash ];
+      # ⚠️ 必须含 kmod：unload 脚本用的是裸 `rmmod`（上游脚本假定 PATH 里有），
+      # 少了它每轮都是 `command not found`（exit 127），被脚本的 `2>/dev/null` 吞成
+      # "rmmod is still busy; retry scheduled" ⇒ lifecycle 永远停在 unload-pending ⇒
+      # pre-start-hook 只接受从 unloaded 启动 ⇒ 容器再也起不来（关窗后"摇不出来"）。
+      # 2026-09-30 实测定罪：unit PATH 下 `command -v rmmod` 为空，交互 shell 用 kmod 的
+      # rmmod 每次都成功。
+      path = with pkgs; [ coreutils util-linux procps lxc bash kmod ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "/etc/kernelsu-next-waydroid/unload";

@@ -565,14 +565,20 @@ in
       # 比例由 hyprland.lua 的 gamescope-keep-aspect 保持）。
       # -S fit -F linear = 等比缩放 + 线性过滤。
       ExecStart = "${pkgs.gamescope}/bin/gamescope --backend sdl --expose-wayland -w 1080 -h 2400 -r 144 -W 405 -H 900 -S fit -F linear --force-windows-fullscreen -- ${innerScript}";
-      # Restart=on-failure：**关窗就是关掉**（2026-09-29 用户选定的行为 B）——
-      # 用户关 gamescope 窗口时 gamescope 干净退出（exit 0）⇒ 不自动回来；要用时点 launcher 的
-      # Waydroid 条目（= systemctl --user start waydroid-gamescope）唤起，窗口仍是规则钉的 405x900。
-      # session 掉线 / gamescope 崩溃是非零退出 ⇒ 仍会被拉起（on-failure）。
-      # 代价（用户已知并接受）：关着的时候 container 会 FROZEN，Pixel 端串流也一起不可用。
-      # 防循环交给 [Unit] 的 StartLimit*；10s 间隔也留出人工介入时间。
-      Restart = "on-failure";
-      RestartSec = 10;
+      # Restart=no：**关窗就是关掉**（2026-09-29 行为 B；2026-09-30 修正实现）。
+      # 当初写 on-failure 的前提是「关窗时 gamescope 干净退出（exit 0）」——实测不成立：
+      # 关窗时它必崩（`terminate called without an active exception` → SIGABRT），栈是
+      # ~CSDLBackend ← IBackend::Set ← steamcompmgr_exit，正是上游「joinable std::thread
+      # 在 ~CSDLBackend 里析构」那一类（ValveSoftware/gamescope#1305，2026-07-13 由 PR#2246
+      # 修复；我们 3.16.23 上仍 7/7 次关闭必崩 ⇒ 疑似回归）。
+      # 后果：systemd 把「关窗」当 failure ⇒ on-failure 每 10s 重拉 ⇒ 反复尝试启动容器，
+      # 与 KernelSU 卸载互相重置（post-stop-hook 每次都把 lifecycle 倒回 stop-pending）
+      # ⇒ 卸载永远完不成、lifecycle 卡 unload-pending、pre-start hook 拒绝容器启动 ⇒ 死循环，
+      # 且那时点 launcher 无效（unit 已是 active，start 是 no-op）（2026-09-30 实测）。
+      # 所以必须是 no：关窗后 unit 停在 failed，点 launcher 的 Waydroid 条目
+      # （systemctl --user start waydroid-gamescope）即可重新唤起（顺带 reset-failed）。
+      # 代价：gamescope 自己崩掉时也不自愈，需要手动点一次。
+      Restart = "no";
     };
     Install.WantedBy = [ "graphical-session.target" ];
   };
