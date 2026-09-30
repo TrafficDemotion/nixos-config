@@ -178,6 +178,27 @@
     fi
   '';
 
+  # ⚠️ 容器内 Android 解析不了内网专有域名（truenas.internal / *.lan 报 UnknownHostException）。
+  # 根因：镜像的 /vendor/bin/waydroid-init 每次 Android 启动都会重写
+  # /data/misc/ethernet/ipconfig.txt 与 apexdata 里那份，静态配置里 DNS **硬编码 8.8.8.8**
+  # （strings /vendor/bin/waydroid-init 里就有这个字面量）；而 *.internal / *.lan 的 A 记录
+  # 只存在于 OpenWrt 的 AdGuard Home ⇒ 公网域名能解析、内网域名一律 NXDOMAIN。
+  # 另外 Android 16 的 Private DNS 自动模式会把 8.8.8.8 验证通过、改走 DoT/853，
+  # 会绕过任何只处理 53 端口的做法（现象：busybox nslookup 通了、netd 仍 UnknownHostException）。
+  # 处置：宿主侧把容器的 DNS 流量重定向到 waydroid0 自己的 dnsmasq（192.168.240.1:53，
+  # 它再转发给内网 AdGuard）；853 送到没有监听的端口，让 DoT 立刻失败、回落明文 DNS。
+  # 好处：与 Android 侧那份被写死的 DNS 地址无关，容器重启后依然有效，不再依赖手工改 ipconfig.txt。
+  # 先 -D 再 -A 是幂等写法（防火墙 reload 不会整体清空 nat PREROUTING）。
+  # 验证（容器内）：ping truenas.internal → 192.168.2.120；ping www.baidu.com 正常。
+  networking.firewall.extraCommands = lib.mkAfter ''
+    iptables -w -t nat -D PREROUTING -i waydroid0 -p udp --dport 53 -j DNAT --to-destination 192.168.240.1:53 2>/dev/null || true
+    iptables -w -t nat -A PREROUTING -i waydroid0 -p udp --dport 53 -j DNAT --to-destination 192.168.240.1:53
+    iptables -w -t nat -D PREROUTING -i waydroid0 -p tcp --dport 53 -j DNAT --to-destination 192.168.240.1:53 2>/dev/null || true
+    iptables -w -t nat -A PREROUTING -i waydroid0 -p tcp --dport 53 -j DNAT --to-destination 192.168.240.1:53
+    iptables -w -t nat -D PREROUTING -i waydroid0 -p tcp --dport 853 -j DNAT --to-destination 192.168.240.1:853 2>/dev/null || true
+    iptables -w -t nat -A PREROUTING -i waydroid0 -p tcp --dport 853 -j DNAT --to-destination 192.168.240.1:853
+  '';
+
   # ═══════ Android 侧 root = KernelSU-Next（声明式，宿主侧由 kernelsu-waydroid/ 提供）═══════
   # 2026-09-29：root 从 Kitsune Mask（Magisk Delta 26.3.1）换成 KernelSU-Next。
   # 换的原因：Kitsune 那套是 **Android 系统层注入**（overlay 的
