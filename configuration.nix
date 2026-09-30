@@ -493,6 +493,23 @@
     alsa.support32Bit = true;
     pulse.enable = true;
     jack.enable = true;
+
+    # pulse 协议默认每个地址只允许 64 个客户端；Waydroid 的音频 HAL 会累积
+    # pulse 连接（长跑后能到 ~70 条），撞上限后服务器拒连所有新客户端
+    # （mod.protocol-pulse: too many client application connections），
+    # 容器里的 snd_pcm_open("pulse") 就全部失败 —— 表现为 Waydroid 没声音 /
+    # 语音消息一卡一卡 / 录音失败。调大上限治标，避免日常复发。
+    # 判据：journalctl --user -u pipewire-pulse | grep "too many client application connections"
+    extraConfig.pipewire-pulse."99-max-clients" = {
+      "pulse.properties" = {
+        "server.address" = [
+          {
+            address = "unix:native";
+            max-clients = 512;
+          }
+        ];
+      };
+    };
   };
 
   # 这里原来有一条给 Sunshine 用的 udev 规则（/dev/uinput、/dev/uhid 授权给 uinput 组）：
