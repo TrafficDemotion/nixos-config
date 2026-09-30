@@ -554,8 +554,15 @@ in
       Description = "Waydroid UI on a gamescope nested output (Android stays 1080x2400; window is freely resizable)";
       After = [ "graphical-session.target" ];
       PartOf = [ "graphical-session.target" ];
-      # 循环保护：5 分钟内最多起 5 次，超了置 failed 别再撞（正常"关窗→自动回来"只算 1 次）。
-      StartLimitIntervalSec = 300;
+      # 【2026-09-30 实测改正】原来的「5 次 / 5 分钟」循环保护是个陷阱，已在压测里复现：
+      # 任何 `systemctl stop`（关窗、graphical-session 重载、脚本清理都走它）都会把 SIGTERM
+      # 发给**整个 cgroup** ⇒ gamescope 内部 fork 的 Xwayland 先死 ⇒ 它的 xwm 立刻报
+      # `xwm: X11 I/O error! This is fatal. Aborting...` 并 abort()（status=6/ABRT）。
+      # 于是每次 stop 都被记一次 failure，5 分钟内开关 5 次就 `start-limit-hit` ⇒ unit 永久
+      # failed（必须 reset-failed 才能再起）—— 用户看到的「关窗之后再也摇不出来」。
+      # 禁用启动频率限制：宁可让 Restart 一直重试，也不要卡在 failed。
+      # （配合下面的 KillMode=mixed，正常情况下 stop 已经不产生 failure 了。）
+      StartLimitIntervalSec = 0;
       StartLimitBurst = 5;
     };
     Service = {
@@ -574,6 +581,13 @@ in
       # 现在换成 unstable 的 gamescope 3.16.28（见 configuration.nix 的 overlays）⇒ 关窗
       # exit 0 ⇒ 不会自动回来；session 掉线 / gamescope 真崩（非零退出）仍会被拉起。
       # 代价（用户已知并接受）：关着的时候 container 会 FROZEN，Pixel 端串流也一起不可用。
+      # ⚠️ KillMode=mixed 是**必需**的（2026-09-30 实测对照）：默认的 control-group 会把
+      # SIGTERM 发给 cgroup 里**所有**进程，gamescope 内部那个 Xwayland 先死 ⇒ 它的 xwm 报
+      # `X11 I/O error! This is fatal. Aborting...` ⇒ abort()（status=6/ABRT）：
+      #   * `systemctl stop`（= control-group）→ Result=core-dump / status=6/ABRT
+      #   * 只给主进程 SIGTERM（= mixed 的效果）→ Result=success / exit 0      ✓
+      # mixed = SIGTERM 只给主进程，给它自己收尾的机会；其余进程等 TimeoutStopSec 后才 SIGKILL。
+      KillMode = "mixed";
       Restart = "on-failure";
       RestartSec = 10;
     };
