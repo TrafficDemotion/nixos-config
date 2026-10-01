@@ -1023,12 +1023,19 @@ in
     # `WAYLAND_DISPLAY=wayland-1` 下拉起来 ⇒ container 的 wayland socket 绑到宿主 ⇒
     # 画面变成 HWC 原生窗口（640x400 这种"显示器比例的小窗 + 放大的左上角"，因为窗口比
     # Android 的 1080 窄，只能 1:1 显示左上角一块）。2026-09-29 用户实测。
-    # `systemctl --user start` 对已在跑的单元是 no-op（窗口本来就在），只有服务没跑时才拉起来。
+    # 【2026-10-01 改为 restart】原设计用 `start`（对已在跑的单元是 no-op，窗口本来就在）。
+    # 2026-10-01 踩到它漏掉的第三种状态：宿主 Hyprland 因 explicit-sync 协议错误
+    # （`wp_linux_drm_syncobj_surface_v1 … Missing buffer`）**单方面断开** gamescope 的
+    # Wayland 连接，而 gamescope 打完 `Wayland display connection closed by server (fatal)`
+    # 后**没有退出** ⇒ systemd 仍认为 unit active、宿主上窗口却已消失。此时点图标 = `start`
+    # = 空操作 ⇒「waydroid 起不来」，而其实容器和 Android 都好好的。
+    # 所以这里改用 `restart`：unit 活着也重启（= 唯一的自救入口），unit 已停则等同于启动。
+    # 代价（已知并接受）：正常运行时误点会重启整条链，Android 重新 boot、窗口约 1~2 分钟才回来。
     Waydroid = {
       name = "Waydroid";
       genericName = "Android Container";
-      comment = "Show/restore the Waydroid UI (starts waydroid-gamescope.service)";
-      exec = "systemctl --user start waydroid-gamescope";
+      comment = "Show/restore the Waydroid UI (restarts waydroid-gamescope.service)";
+      exec = "systemctl --user restart waydroid-gamescope";
       icon = "waydroid";
       categories = [ "X-WayDroid-App" "Utility" ];
       terminal = false;
