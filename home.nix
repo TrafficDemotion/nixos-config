@@ -934,6 +934,22 @@ in
       terminal = true;
       settings.StartupNotify = "false";
     };
+
+    # ── LineageOS 23.2（PVE VM109 上的 x86_64 持久系统）的串流目标 ──
+    # 2026-10-01 新装：纯 LineageOS 23.2（Android 16），面板 405x900 竖屏，参数与 BlissOS 主条目同一套。
+    #   * adb 是 insecure 模式（无授权弹窗），scrcpy 直接用 `--tcpip=` 自动连接。
+    #   * `--no-audio`：这台虚拟机没有声卡 —— 不关掉音频会让 server 直接退出（与 BlissOS 同样的坑）。
+    #   * `--window-width=405`：窗口宽 = 面板宽 ⇒ 1:1 零重采样；高度按比例自动。
+    #   * 鼠标键位与 BlissOS 主条目一致：SDK 模式 + `--mouse-bind=++b-`（右键/中键转发，4号键=BACK，5号=忽略）。
+    scrcpy-lineage109 = {
+      name = "scrcpy (LineageOS 109)";
+      comment = "Stream and control LineageOS 23.2 on PVE VM109 (auto-connects 192.168.2.219:5555)";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.219:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++b- --window-width=405";
+      icon = "scrcpy";
+      categories = [ "Utility" "RemoteAccess" ];
+      terminal = false;
+      settings.StartupNotify = "false";
+    };
     # Waydroid（Android 容器，跑在同一台 NixOS 上）的串流目标：adb 走 waydroid0 网桥
     # 192.168.240.112:5555（= `waydroid adb connect` 给的地址），宿主直接可达。
     #   * 尺寸定稿（2026-09-29 用户要求「比真机稍微大一点点、不要太糊」）= **405x900**，与原生 Waydroid 窗口同尺寸：
