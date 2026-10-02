@@ -950,6 +950,26 @@ in
       terminal = false;
       settings.StartupNotify = "false";
     };
+    # ── LineageOS 23.2 virtio_x86_64（PVE VM111，官方 virtio 目标的现成 VM 镜像）的串流目标 ──
+    # 2026-10-02 实装：**这是第一台视频编码器正常的 x86 安卓**（0xCAFE 的 Generic_x86_64 构建编码器坏，
+    #   screenrecord 与 scrcpy 全挂）。差别在图形栈：virtio 目标 = `ro.hardware.egl=mesa` + `vulkan=lvp_mesa3d`
+    #   （无 gralloc/minigbm 覆写），而 0xCAFE = ANGLE + SwiftShader + minigbm_upstream。
+    #   * 面板 400x900 竖屏（QEMU `-global virtio-vga.xres=405/yres=900` 被取整成 400）；窗口宽 = 面板宽 ⇒ 1:1 零重采样。
+    #   * adb insecure（往 persist 分区 grubenv 写了 `android_insecure_adb=1`）⇒ scrcpy 直接 `--tcpip` 自动连。
+    #   * **IP 是 DHCP 来的 192.168.2.178**（MAC 变了就改这一行）。
+    #   * `--no-audio`：这台 VM 没有声卡（不关音频 scrcpy server 会直接退出）。
+    #   * 键鼠走 **SDK 模式**：本构建 `/dev/uhid` 权限未知，SDK 模式无依赖、最稳；键位沿用 `++b-`。
+    #   * ⚠️ 已知缺陷：**进「开发者选项」会闪退**（Settings 写 `persist.logd.logpersistd.buffer` 被 sepolicy 拒）。
+    scrcpy-lineage111 = {
+      name = "scrcpy (LineageOS 111 virtio)";
+      comment = "Stream and control LineageOS 23.2 virtio_x86_64 on PVE VM111 (auto-connects 192.168.2.178:5555)";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.178:5555 --keyboard=sdk --mouse=sdk --mouse-bind=++b- --window-width=400";
+      icon = "scrcpy";
+      categories = [ "Utility" "RemoteAccess" ];
+      terminal = false;
+      settings.StartupNotify = "false";
+    };
+
     # ── BassOS「Bass: Lineout」23.2（PVE VM110 上的 x86_64 持久系统）的串流目标 ──
     # 2026-10-02 全新重装：Android 16 的 DesktopUI 构建，面板 1280x800（横向）。
     #   * adb 是 insecure 模式（`androidboot.insecure_adb=1` ⇒ `ro.adb.secure=0`，adb shell 直接是 root）
