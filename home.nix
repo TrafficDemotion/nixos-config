@@ -950,6 +950,24 @@ in
       terminal = false;
       settings.StartupNotify = "false";
     };
+    # ── BassOS「Bass: Lineout」23.2（PVE VM110 上的 x86_64 持久系统）的串流目标 ──
+    # 2026-10-02 全新重装：Android 16 的 DesktopUI 构建，面板 1280x800（横向）。
+    #   * adb 是 insecure 模式（`androidboot.insecure_adb=1` ⇒ `ro.adb.secure=0`，adb shell 直接是 root）
+    #     ⇒ scrcpy 用 `--tcpip=` 自动连；**IP 是 DHCP 来的 192.168.2.189**（MAC 变了就会变，届时改这里）。
+    #   * `--no-audio`：这台 VM 没有声卡 —— 不关掉音频会让 scrcpy server 直接退出（与 BlissOS/Waydroid 相同的坑）。
+    #   * 鼠标/键盘走 **SDK 模式**：guest 的 `/dev/uhid` 是 `0660 uhid:uhid`，scrcpy 的 server 以 shell 身份跑会
+    #     EACCES ⇒ 想用 uhid（真右键 + 相对模式）得先在 guest 里 `chmod 666 /dev/uhid` 并做成开机持久。
+    #     键位沿用 107 上验证过的那套：`--mouse-bind=++b-`（右键/中键转发，4 号键=BACK，5 号键=忽略）。
+    #   * `--max-size=1280`：面板原生宽度、不降采样（文字最清晰）；哪天掉帧再往下调（如 1024/800）。
+    scrcpy-bassos = {
+      name = "scrcpy (BassOS 110)";
+      comment = "Stream and control BassOS (Bass: Lineout) on PVE VM110 (auto-connects 192.168.2.189:5555)";
+      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.189:5555 --keyboard=sdk --mouse=sdk --mouse-bind=++b- --max-size=1280 --window-width=1024";
+      icon = "scrcpy";
+      categories = [ "Utility" "RemoteAccess" ];
+      terminal = false;
+      settings.StartupNotify = "false";
+    };
     # Waydroid（Android 容器，跑在同一台 NixOS 上）的串流目标：adb 走 waydroid0 网桥
     # 192.168.240.112:5555（= `waydroid adb connect` 给的地址），宿主直接可达。
     #   * 尺寸定稿（2026-09-29 用户要求「比真机稍微大一点点、不要太糊」）= **405x900**，与原生 Waydroid 窗口同尺寸：
