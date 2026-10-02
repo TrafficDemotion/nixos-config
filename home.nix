@@ -935,21 +935,6 @@ in
       settings.StartupNotify = "false";
     };
 
-    # ── LineageOS 23.2（PVE VM109 上的 x86_64 持久系统）的串流目标 ──
-    # 2026-10-01 新装：纯 LineageOS 23.2（Android 16），面板 405x900 竖屏，参数与 BlissOS 主条目同一套。
-    #   * adb 是 insecure 模式（无授权弹窗），scrcpy 直接用 `--tcpip=` 自动连接。
-    #   * `--no-audio`：这台虚拟机没有声卡 —— 不关掉音频会让 server 直接退出（与 BlissOS 同样的坑）。
-    #   * `--window-width=405`：窗口宽 = 面板宽 ⇒ 1:1 零重采样；高度按比例自动。
-    #   * 鼠标键位与 BlissOS 主条目一致：SDK 模式 + `--mouse-bind=++b-`（右键/中键转发，4号键=BACK，5号=忽略）。
-    scrcpy-lineage109 = {
-      name = "scrcpy (LineageOS 109)";
-      comment = "Stream and control LineageOS 23.2 on PVE VM109 (auto-connects 192.168.2.219:5555)";
-      exec = "${pkgs.scrcpy}/bin/scrcpy --no-audio --tcpip=192.168.2.219:5555 --keyboard=uhid --mouse=sdk --mouse-bind=++b- --window-width=405";
-      icon = "scrcpy";
-      categories = [ "Utility" "RemoteAccess" ];
-      terminal = false;
-      settings.StartupNotify = "false";
-    };
     # ── LineageOS 23.2 virtio_x86_64（PVE VM111，官方 virtio 目标的现成 VM 镜像）的串流目标 ──
     # 2026-10-02 实装：**这是第一台视频编码器正常的 x86 安卓**（0xCAFE 的 Generic_x86_64 构建编码器坏，
     #   screenrecord 与 scrcpy 全挂）。差别在图形栈：virtio 目标 = `ro.hardware.egl=mesa` + `vulkan=lvp_mesa3d`
