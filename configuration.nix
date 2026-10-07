@@ -44,27 +44,28 @@
   # 2026-09-11 起 NixOS 不再当串流主机，已删（要恢复的话 Sunshine 的 NixOS 模块自己不加载
   # uinput 模块 —— 得把这行加回来，见下面 services.sunshine 那段注释）。
 
-  # uinput：2026-10-05 起给 evsieve 造「虚拟 Xbox 手柄」用（键盘方向键/Enter/Esc → 手柄，
-  # Moonlight 会把客户端手柄转发给 guest，这样 ChimeraOS 游戏模式下的 Steam QAM
-  # （Exit Game 等）就有手柄可操作）。这个模块会建 uinput 组并给 /dev/uinput 授权
+  # uinput：2026-10-05 起给 evsieve 造「虚拟 Xbox 手柄」用（现在只剩「左 Super → Guide」一条）。
+  # 这个模块会建 uinput 组并给 /dev/uinput 授权
   # （GROUP=uinput MODE=0660），paan 加进该组见下面 users.users.paan.extraGroups。
   hardware.uinput.enable = true;
 
-  # evsieve：把键盘的 方向键/Enter/Esc 复制成「虚拟 Xbox 手柄」的 d-pad / A / B（2026-10-05）。
-  # ⚠️ d-pad 必须发 BTN_DPAD_*（XInput 是按键语义）；发 ABS_HAT0X/0Y 的话 Steam 当它 XInput 手柄、完全不吃（实测只收到 A）。
-  # 不 grab（原键盘照常工作）；Moonlight 会把客户端手柄转发给 guest，于是 ChimeraOS 游戏模式里的
-  # Steam QAM（Exit Game 等）能用方向键+Enter/Esc 操作。
+  # evsieve：把键盘的 左 Super 复制成「虚拟 Xbox 手柄」的 Guide（btn:mode）= 流里的「steam 键」。
+  # ⚠️ 2026-10-05 曾把 方向键/Enter/Esc 也复制成 d-pad / A / B；**2026-10-07 撤掉**，原因：
+  #   本服务故意**不 grab**（要保证本地键盘照常可用），于是每次按键会走两路（原键盘 + 虚拟手柄），
+  #   而 Steam 的库两路都吃 ⇒ 按一次方向键走两格（ChimeraOS 上先发现，Wolf 主机上复现；
+  #   实测 stop 本服务后只走一格）。Steam 客户端本身就认键盘的方向键 / Enter / Esc，
+  #   所以镜像那六个键没必要 —— 留着只会让每一次导航都翻倍。
+  # 输出设备的能力清单（btn:south…abs:ry）**故意保留完整**：guest 要把它当成一台正常手柄，
+  # Guide（Super）才认得出来。
   # 跑成系统服务（root）：用户服务拿不到 /dev/uinput 写权限（uinput 组要重新登录才进会话），
   # root 服务免掉组/ACL/重登这一整类问题。
   # ⚠️ 两个稳定设备路径由下面 services.udev.extraRules 建；键盘没连上时 evsieve 会退出并被
   # Restart 拉起（每 5 秒一次，只刷日志），连上后自动开始工作。
-  # 2026-10-07：加 --map key:leftmeta btn:mode —— 左 Super 复制成手柄 Guide；流里按 Super =
-  # 「steam 键」（叫出 Steam 主菜单）；本地 Super 一切照旧（不 grab、不拦截）。
   systemd.services.evsieve-pad = {
     description = "evsieve: keyboard -> virtual Xbox pad (Moonlight gamepad forwarding)";
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
-      ExecStart = ''${pkgs.evsieve}/bin/evsieve --input /dev/input/kbd-k380 --input /dev/input/kbd-atk --map key:up btn:dpad_up --map key:down btn:dpad_down --map key:left btn:dpad_left --map key:right btn:dpad_right --map key:enter btn:south --map key:esc btn:east --map key:leftmeta btn:mode --output name="Xbox 360 Controller" btn:south btn:east btn:north btn:west btn:dpad_up btn:dpad_down btn:dpad_left btn:dpad_right btn:start btn:select btn:mode btn:tl btn:tr btn:thumbl btn:thumbr abs:x:-32768..32767 abs:y:-32768..32767 abs:rx:-32768..32767 abs:ry:-32768..32767'';
+      ExecStart = ''${pkgs.evsieve}/bin/evsieve --input /dev/input/kbd-k380 --input /dev/input/kbd-atk --map key:leftmeta btn:mode --output name="Xbox 360 Controller" btn:south btn:east btn:north btn:west btn:dpad_up btn:dpad_down btn:dpad_left btn:dpad_right btn:start btn:select btn:mode btn:tl btn:tr btn:thumbl btn:thumbr abs:x:-32768..32767 abs:y:-32768..32767 abs:rx:-32768..32767 abs:ry:-32768..32767'';
       Restart = "always";
       RestartSec = 5;
     };
