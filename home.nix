@@ -1307,6 +1307,9 @@ in
     # 否则启动就报 "chafa rendering failed"。
     inputs.anifetch.packages.${pkgs.stdenv.hostPlatform.system}.default
     chafa
+
+    # 键盘 → 虚拟 Xbox 手柄（见下面 systemd.user.services.evsieve-pad）
+    evsieve
   ];
 
   # ═══════════════════ 桌面配置（软链进 ~/.config）═══════════════════

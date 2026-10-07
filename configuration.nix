@@ -44,6 +44,32 @@
   # 2026-09-11 起 NixOS 不再当串流主机，已删（要恢复的话 Sunshine 的 NixOS 模块自己不加载
   # uinput 模块 —— 得把这行加回来，见下面 services.sunshine 那段注释）。
 
+  # uinput：2026-10-05 起给 evsieve 造「虚拟 Xbox 手柄」用（键盘方向键/Enter/Esc → 手柄，
+  # Moonlight 会把客户端手柄转发给 guest，这样 ChimeraOS 游戏模式下的 Steam QAM
+  # （Exit Game 等）就有手柄可操作）。这个模块会建 uinput 组并给 /dev/uinput 授权
+  # （GROUP=uinput MODE=0660），paan 加进该组见下面 users.users.paan.extraGroups。
+  hardware.uinput.enable = true;
+
+  # evsieve：把键盘的 方向键/Enter/Esc 复制成「虚拟 Xbox 手柄」的 d-pad / A / B（2026-10-05）。
+  # ⚠️ d-pad 必须发 BTN_DPAD_*（XInput 是按键语义）；发 ABS_HAT0X/0Y 的话 Steam 当它 XInput 手柄、完全不吃（实测只收到 A）。
+  # 不 grab（原键盘照常工作）；Moonlight 会把客户端手柄转发给 guest，于是 ChimeraOS 游戏模式里的
+  # Steam QAM（Exit Game 等）能用方向键+Enter/Esc 操作。
+  # 跑成系统服务（root）：用户服务拿不到 /dev/uinput 写权限（uinput 组要重新登录才进会话），
+  # root 服务免掉组/ACL/重登这一整类问题。
+  # ⚠️ 两个稳定设备路径由下面 services.udev.extraRules 建；键盘没连上时 evsieve 会退出并被
+  # Restart 拉起（每 5 秒一次，只刷日志），连上后自动开始工作。
+  # 2026-10-07：加 --map key:leftmeta btn:mode —— 左 Super 复制成手柄 Guide；流里按 Super =
+  # 「steam 键」（叫出 Steam 主菜单）；本地 Super 一切照旧（不 grab、不拦截）。
+  systemd.services.evsieve-pad = {
+    description = "evsieve: keyboard -> virtual Xbox pad (Moonlight gamepad forwarding)";
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      ExecStart = ''${pkgs.evsieve}/bin/evsieve --input /dev/input/kbd-k380 --input /dev/input/kbd-atk --map key:up btn:dpad_up --map key:down btn:dpad_down --map key:left btn:dpad_left --map key:right btn:dpad_right --map key:enter btn:south --map key:esc btn:east --map key:leftmeta btn:mode --output name="Xbox 360 Controller" btn:south btn:east btn:north btn:west btn:dpad_up btn:dpad_down btn:dpad_left btn:dpad_right btn:start btn:select btn:mode btn:tl btn:tr btn:thumbl btn:thumbr abs:x:-32768..32767 abs:y:-32768..32767 abs:rx:-32768..32767 abs:ry:-32768..32767'';
+      Restart = "always";
+      RestartSec = 5;
+    };
+  };
+
   # ── 软件假负载（不买 EDID 假插头）────────────────────────────
   # 把实机 AOC Q24G50F 的 EDID 当固件喂给内核，让 i915 认为 HDMI-A-1 上永远接着这台显示器：
   #   * 内核控制台 / SDDM greeter / Hyprland / Sunshine 始终有输出
@@ -352,8 +378,9 @@
       "networkmanager"
       "video"
       "input"
-      # 原来还有 "uinput"（Sunshine 造虚拟键鼠用）：2026-09-11 不再当串流主机后去掉，
-      # 需要时 Sunshine 的 NixOS 模块会自己建这个组。
+      # "uinput"：2026-10-05 加回来 —— evsieve 造虚拟手柄要写 /dev/uinput，
+      # 该组由 hardware.uinput.enable 创建（GROUP=uinput MODE=0660）。
+      "uinput"
     ];
     # 密码仍由 mutableUsers 管（/etc/shadow），不在这里写 hashedPassword
   };
@@ -511,6 +538,13 @@
       };
     };
   };
+
+  # 给蓝牙键盘建稳定路径：BT 设备的 /dev/input 下既没有 by-id、也没有 by-path 条目，
+  # 而 home.nix 里的 evsieve-pad 服务需要固定设备路径（2026-10-05 加）。
+  services.udev.extraRules = ''
+    KERNEL=="event*", SUBSYSTEM=="input", ATTRS{name}=="Keyboard K380 Keyboard", SYMLINK+="input/kbd-k380"
+    KERNEL=="event*", SUBSYSTEM=="input", ATTRS{name}=="ATK A9 Plus Nearlink Keyboard", SYMLINK+="input/kbd-atk"
+  '';
 
   # 这里原来有一条给 Sunshine 用的 udev 规则（/dev/uinput、/dev/uhid 授权给 uinput 组）：
   # Sunshine 以用户级服务运行、拿不到 cap，所以靠 uaccess 给当前会话授权。
