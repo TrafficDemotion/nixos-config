@@ -55,8 +55,14 @@
   #   而 Steam 的库两路都吃 ⇒ 按一次方向键走两格（ChimeraOS 上先发现，Wolf 主机上复现；
   #   实测 stop 本服务后只走一格）。Steam 客户端本身就认键盘的方向键 / Enter / Esc，
   #   所以镜像那六个键没必要 —— 留着只会让每一次导航都翻倍。
-  # 输出设备的能力清单（btn:south…abs:ry）**故意保留完整**：guest 要把它当成一台正常手柄，
-  # Guide（Super）才认得出来。
+  # ⚠️ **但撤掉镜像后手柄就失效了**（20:5x 实测）：evsieve 只给输出设备声明**被 --map 真正写到**的能力
+  #   （下面那串 --output 能力列表只是"过滤器"，不会凭空造出能力）⇒ 设备只剩 BTN_MODE，
+  #   内核的 js 节点消失、Moonlight/SDL 不再把它当手柄上报 ⇒ guest 里没有手柄 ⇒ 按 Super 叫不出 Steam 菜单。
+  #   **解法**：用键盘上不存在的 **F13–F18 当"哑键"**把 dpad/面键的能力补回来 ——
+  #   能力回来了（设备重新被识别为手柄），而没有任何真实按键会触发它们
+  #   （K380 没有 F13+；万一将来某把键盘能发 F13，后果也只是流里多一个手柄按键）。
+  #   ⚠️ 代价：这样**游戏内**就不能再用手柄 dpad/AB 在 Steam 侧栏里导航了（要那个能力就得改成
+  #   "evsieve 抓住键盘、再把除方向键/Enter/Esc 外的键原样重发"，那样本地方向键会失效）。
   # 跑成系统服务（root）：用户服务拿不到 /dev/uinput 写权限（uinput 组要重新登录才进会话），
   # root 服务免掉组/ACL/重登这一整类问题。
   # ⚠️ 两个稳定设备路径由下面 services.udev.extraRules 建；键盘没连上时 evsieve 会退出并被
@@ -65,7 +71,7 @@
     description = "evsieve: keyboard -> virtual Xbox pad (Moonlight gamepad forwarding)";
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
-      ExecStart = ''${pkgs.evsieve}/bin/evsieve --input /dev/input/kbd-k380 --input /dev/input/kbd-atk --map key:leftmeta btn:mode --output name="Xbox 360 Controller" btn:south btn:east btn:north btn:west btn:dpad_up btn:dpad_down btn:dpad_left btn:dpad_right btn:start btn:select btn:mode btn:tl btn:tr btn:thumbl btn:thumbr abs:x:-32768..32767 abs:y:-32768..32767 abs:rx:-32768..32767 abs:ry:-32768..32767'';
+      ExecStart = ''${pkgs.evsieve}/bin/evsieve --input /dev/input/kbd-k380 --input /dev/input/kbd-atk --map key:leftmeta btn:mode --map key:f13 btn:dpad_up --map key:f14 btn:dpad_down --map key:f15 btn:dpad_left --map key:f16 btn:dpad_right --map key:f17 btn:south --map key:f18 btn:east --output name="Xbox 360 Controller" btn:south btn:east btn:north btn:west btn:dpad_up btn:dpad_down btn:dpad_left btn:dpad_right btn:start btn:select btn:mode btn:tl btn:tr btn:thumbl btn:thumbr abs:x:-32768..32767 abs:y:-32768..32767 abs:rx:-32768..32767 abs:ry:-32768..32767'';
       Restart = "always";
       RestartSec = 5;
     };
