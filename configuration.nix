@@ -67,11 +67,13 @@
   # root 服务免掉组/ACL/重登这一整类问题。
   # ⚠️ 两个稳定设备路径由下面 services.udev.extraRules 建；键盘没连上时 evsieve 会退出并被
   # Restart 拉起（每 5 秒一次，只刷日志），连上后自动开始工作。
+  # 2026-10-11 修复「Windows 串流端 Win 键要按两次」：Guide 脉冲延迟 0.5s 发放
+  #（--delay btn:mode period=0.5）——Win 键按压先走完、Guide 后到，不再打扰。
   systemd.services.evsieve-pad = {
     description = "evsieve: keyboard -> virtual Xbox pad (Moonlight gamepad forwarding)";
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
-      ExecStart = ''${pkgs.evsieve}/bin/evsieve --input /dev/input/kbd-k380 --input /dev/input/kbd-atk --map key:leftmeta btn:mode --map key:f13 btn:dpad_up --map key:f14 btn:dpad_down --map key:f15 btn:dpad_left --map key:f16 btn:dpad_right --map key:f17 btn:south --map key:f18 btn:east --output name="Xbox 360 Controller" btn:south btn:east btn:north btn:west btn:dpad_up btn:dpad_down btn:dpad_left btn:dpad_right btn:start btn:select btn:mode btn:tl btn:tr btn:thumbl btn:thumbr abs:x:-32768..32767 abs:y:-32768..32767 abs:rx:-32768..32767 abs:ry:-32768..32767'';
+      ExecStart = ''${pkgs.evsieve}/bin/evsieve --input /dev/input/kbd-k380 --input /dev/input/kbd-atk --map key:leftmeta btn:mode --map key:f13 btn:dpad_up --map key:f14 btn:dpad_down --map key:f15 btn:dpad_left --map key:f16 btn:dpad_right --map key:f17 btn:south --map key:f18 btn:east --delay btn:mode period=0.5 --output name="Xbox 360 Controller" btn:south btn:east btn:north btn:west btn:dpad_up btn:dpad_down btn:dpad_left btn:dpad_right btn:start btn:select btn:mode btn:tl btn:tr btn:thumbl btn:thumbr abs:x:-32768..32767 abs:y:-32768..32767 abs:rx:-32768..32767 abs:ry:-32768..32767'';
       Restart = "always";
       RestartSec = 5;
     };
