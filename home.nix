@@ -109,6 +109,8 @@ in
     #        去掉旋转/缩放/圆角回缩与中心锁图标）。
     #   0008 锁屏密码框：去掉常驻提示「Enter your password」（只去显示、保留量宽，空态密码框
     #        宽度不变；Loading…/Scanning face… 这类瞬时提示照旧显示）。
+    #   0017 音频自愈：默认输出/输入节点被销毁+同名重建后按名字兜底（详见补丁头注释与
+    #        notes/caelestia-shell-audio-stale-20261011.md；上游 quickshell#1301）。
     # 锚点对不上会**构建失败**（不会静默失效）：升级外壳前先 `nixos-rebuild build`。
     package =
       inputs.caelestia-shell.packages.${pkgs.stdenv.hostPlatform.system}.with-cli
@@ -146,6 +148,12 @@ in
             #        上游没实现设置搜索，它只写 NexusState.searchOpen 而那个属性全外壳
             #        没有消费者，输入什么都不会发生。
             ./patches/caelestia/0016-nexus-no-search-bar.patch
+            #   0017 音频自愈：Quickshell 的 defaultAudioSink/defaultAudioSource 在「默认节点被
+            #        销毁后同名重建」时会永久停在 null（上游 quickshell#1301 —— 蓝牙节点每次重建、
+            #        切 card profile 都会命中），整个音量 UI 变哑：改音量不再弹 OSD 音量条、
+            #        拖滑条无效、喇叭图标显示成「关闭」。这里记住最后可用节点的名字，
+            #        default 不可用/未就绪时按名字在现存 sinks/sources 里兜底。上游修好后删这行。
+            ./patches/caelestia/0017-audio-selfheal.patch
           ];
       });
 

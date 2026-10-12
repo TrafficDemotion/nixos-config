@@ -193,6 +193,7 @@ programs.caelestia.package =
 | `0014-launcher-clipboard-order.patch` | `modules/launcher/services/Clipboard.qml` | 剪贴板面板顺序：把 `Variants.instances` 按 `cliphist list` 的原序（新→旧）重排 —— 修「粘贴/复制后的条目在最底部」（原因见下面「剪贴板面板的顺序」一节） |
 | `0015-nexus-hide-shell-pages.patch` | `modules/nexus/{PageRegistry,PageCompRegistry}.qml` | 设置里删掉 **Panels / Apps / Services / Language & region** 四页的导航项与对应组件 |
 | `0016-nexus-no-search-bar.patch` | `modules/nexus/NavPane.qml` | 删掉设置页左栏那个没实现的「Search settings」搜索框 |
+| `0017-audio-selfheal.patch` | `services/Audio.qml` | 音频自愈：Quickshell 的 `defaultAudioSink`/`defaultAudioSource` 在「默认节点被销毁后同名重建」时会永久停在 null（上游 quickshell#1301 —— 蓝牙节点每次重建、切 card profile 都会命中），整个音量 UI 变哑（改音量不弹 OSD、拖滑条无效、喇叭图标显示「关闭」）。补丁记住最后可用节点的名字，default 不可用/未就绪时按名字在现存 sinks/sources 里兜底；上游修好后删掉本行与补丁文件 |
 
 > **为什么这四页要去掉**：它们编辑的全是 `shell.json` 的键（`bar/dashboard/launcher/sidebar/utilities`、
 > `general.apps`、`services.*`、`nexus.*`），而本机 `shell.json` 由 HM 托管成指向 `/nix/store` 的只读软链

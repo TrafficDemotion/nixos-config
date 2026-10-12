@@ -1,0 +1,67 @@
+Audio: 默认输出/输入节点被销毁+同名重建后按名字兜底自愈（上游 quickshell#1301）
+
+Quickshell 的 Pipewire.defaultAudioSink/defaultAudioSource 在「默认节点被销毁后同名重建」
+时会永久停在 null：src/services/pipewire/defaults.cpp 的 onDefaultSinkDestroyed() 清空
+mDefaultSink 后不再重新解析，而唯一的恢复点 onNodeAdded() 条件过窄（要求此刻恰好为 null
+且节点名已就绪）。蓝牙音频节点每次重建（A2DP transport 断链、切 card profile）都会命中，
+表现为整个音量 UI 变哑：Audio.volume 恒 0（改音量不再弹 OSD 音量条）、setVolume() 因
+sink?.ready 为空而空转（拖滑条无效）、竖栏喇叭图标显示成「关闭」样式。
+已提上游 issue：quickshell-mirror/quickshell#1301（含建议补丁）。
+本补丁记住最后一次可用节点的名字，default 不可用/未就绪时按名字在现存 sinks/sources 里
+兜底；上游修好后删掉本补丁与 home.nix 里对应那一行即可。
+
+--- a/services/Audio.qml
++++ b/services/Audio.qml
+@@ -19,8 +19,28 @@
+     property list<PwNode> sources: []
+     property list<PwNode> streams: []
+ 
+-    readonly property PwNode sink: Pipewire.defaultAudioSink
+-    readonly property PwNode source: Pipewire.defaultAudioSource
++    // ── 本地补丁（patches/caelestia/0017-audio-selfheal.patch）────────────────────
++    // Quickshell 的 defaultAudioSink/defaultAudioSource 在「默认节点被销毁后同名重建」
++    // 时会永久停在 null（上游 quickshell #1301：defaults.cpp 的 onDefaultSinkDestroyed
++    // 清空后不再重新解析，onNodeAdded 的恢复条件又太窄）。蓝牙音频节点每次重建
++    // （A2DP transport 断链、切 card profile）都会触发，于是整个音量 UI 变哑：
++    // Audio.volume 恒 0（改音量不再弹 OSD）、setVolume() 因 sink?.ready 为空而空转。
++    // 这里记住最后一次可用节点的名字，default 不可用/未就绪时按名字在现存节点里兜底。
++    property string lastSinkName: ""
++    property string lastSourceName: ""
++
++    function fallbackNode(items, nodeName) {
++        if (!items || !nodeName)
++            return null;
++
++        return items.find(n => n.ready && n.name === nodeName) ?? null;
++    }
++
++    readonly property PwNode defaultSink: Pipewire.defaultAudioSink
++    readonly property PwNode defaultSource: Pipewire.defaultAudioSource
++
++    readonly property PwNode sink: (defaultSink?.ready ? defaultSink : fallbackNode(sinks, lastSinkName))
++    readonly property PwNode source: (defaultSource?.ready ? defaultSource : fallbackNode(sources, lastSourceName))
+ 
+     readonly property bool muted: !!sink?.audio?.muted
+     readonly property real volume: sink?.audio?.volume ?? 0
+@@ -128,6 +148,10 @@
+     }
+ 
+     onSinkChanged: {
++        // 本地补丁 0017：default 就绪时把它的名字记下来，供上面兜底用
++        if (defaultSink?.ready)
++            lastSinkName = defaultSink.name;
++
+         if (!sink?.ready)
+             return;
+ 
+@@ -140,6 +164,10 @@
+     }
+ 
+     onSourceChanged: {
++        // 本地补丁 0017：同上，记下来源名字
++        if (defaultSource?.ready)
++            lastSourceName = defaultSource.name;
++
+         if (!source?.ready)
+             return;
+ 
