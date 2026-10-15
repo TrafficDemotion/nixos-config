@@ -149,9 +149,9 @@
   zramSwap.enable = true;
 
   # 无磁盘 swap 时 3.8G 内存扛不住从源码编译（quickshell 那次就被 OOM killer 杀了）。
-  # 这个 swapfile 是用 `btrfs filesystem mkswapfile --size 8g /swapfile` 建的
-  # （btrfs 上正确的建法：nodatacow + 预分配），这里只负责开机启用。
-  swapDevices = [ { device = "/swapfile"; } ];
+  # 2026-10-15 起 swap 迁到独立 8G 小盘（sata1）的裸设备上：btrfs swapfile
+  # 与内核页损坏（Bad page state）类问题相关，改用非 btrfs 裸盘规避。
+  swapDevices = [ { device = "/dev/disk/by-id/ata-QEMU_HARDDISK_QM00015"; } ];
 
   # btrfs 每月自动 scrub
   services.btrfs.autoScrub = {
