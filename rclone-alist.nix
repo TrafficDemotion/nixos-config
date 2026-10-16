@@ -16,7 +16,7 @@
     serviceConfig = {
       Type = "notify";
       ExecStartPre = "-${pkgs.fuse3}/bin/fusermount3 -u /mnt/alist";
-      ExecStart = "${pkgs.rclone}/bin/rclone mount alist: /mnt/alist --config /etc/rclone/rclone.conf --uid 1000 --gid 100 --umask 002 --allow-other --vfs-cache-mode writes --vfs-cache-max-age 24h --cache-dir /var/cache/rclone";
+      ExecStart = "${pkgs.rclone}/bin/rclone mount alist: /mnt/alist --config /etc/rclone/rclone.conf --uid 1000 --gid 100 --umask 002 --allow-other --vfs-cache-mode writes --vfs-cache-max-age 24h --dir-cache-time 10s --cache-dir /var/cache/rclone";
       ExecStop = "${pkgs.fuse3}/bin/fusermount3 -u /mnt/alist";
       Restart = "on-failure";
       RestartSec = "5s";
