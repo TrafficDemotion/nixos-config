@@ -10,7 +10,7 @@
 
 { config, lib, pkgs, inputs, ... }:
 {
-  imports = [ ./hardware-configuration.nix ./kernelsu-waydroid/default.nix ];
+  imports = [ ./hardware-configuration.nix ./kernelsu-waydroid/default.nix ./rclone-alist.nix ];
 
   # Sunshine 用一个本地 vendored 的包定义（./pkgs/sunshine.nix）升到上游
   # v2026.910.221003：nixpkgs 26.05 与 unstable 都还停在 2026.516，而那个版本的
