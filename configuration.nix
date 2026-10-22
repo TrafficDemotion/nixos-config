@@ -101,6 +101,14 @@
     # flip_done timed out（画面定格、鼠标不动）。详见 ~/notes/nixos-display-freeze-20260914-rmrr.md
     # ⚠️ 以后若改宿主 BIOS 的显存(DVMT)大小，RMRR 范围会变，这里的数值要按新的重算。
     "memmap=74M$0x4e000000"
+    # i915.enable_dsb=0：2026-10-22 起核显的 DSB（Display State Buffer，硬件卸载提交缓冲）
+    # 引擎卡在硬件层 —— 每次原子提交都超时（`[CRTC:88:pipe A] DSB 0 is busy` /
+    # `flip_done timed out` / `commit wait timed out`）⇒ 合成器无法 modeset，
+    # 屏幕「有信号但全黑」。sysfs 驱动重载与宿主 warm reset 都清不掉（实测），
+    # 只有关掉 DSB 能绕开：提交改走直接 MMIO 写，画面与功能无损失（内核会被 taint）。
+    # 判据：`sudo dmesg -T | grep -cE "DSB 0 is busy|flip_done timed out"` = 0。
+    # 若日后整机彻底断电（AC 断开）后 DSB 恢复正常，可删掉这一行再重建。
+    "i915.enable_dsb=0"
   ];
   hardware.firmware = [
     (pkgs.runCommandLocal "edid-aoc-q24g50f" { } ''
