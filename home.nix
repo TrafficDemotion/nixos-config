@@ -811,7 +811,21 @@ in
     #   { on = "n"; run = "shell --orphan 'neovide .'"; desc = "Open Neovide here"; }
     # 顺带记着这种命令为什么不必自己拼路径：yazi 的 shell 命令跑在【当前标签页的 cwd】里
     # （yazi-actor/src/mgr/shell.rs: `let cwd = form.cwd.unwrap_or_else(|| cx.cwd().clone())`）。
+    # 2026-10-24：`d` 默认是「移到回收站」。在 /mnt/truenas/* 这类 CIFS 挂载上，
+    # trash-rs 会按 freedesktop 规范在对端文件系统根目录建 .Trash-1000 —— 那是真文件、
+    # 真占 NAS 空间（只能靠快照/手删回收）。而 yazi 26.5.6 的按键规则结构体只有
+    # on/run/desc/for（yazi-config/src/keymap/chord.rs），没有 `cond`，做不到「只对某个
+    # 路径生效」⇒ 只能全局改：d = 永久删除（yazi 仍会弹确认框），回收站挪到 T。
+    # 回滚：删掉下面两条 prepend（d/T），恢复默认 d=trash、D=remove --permanently。
     keymap.mgr.prepend_keymap = [
+      {
+        on = "d";
+        run = "remove --permanently";
+      }
+      {
+        on = "T";
+        run = "remove";
+      }
       {
         on = "h";
         run = "noop";

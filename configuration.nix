@@ -167,6 +167,32 @@
     fileSystems = [ "/" ];
   };
 
+  # 2026-10-24：/home 的文件级兜底 = btrfs 时间线快照。
+  # 起因：yazi 的 d 改成永久删除（为了不在 NAS 的 CIFS 共享里生成 .Trash-1000），
+  # 本地误删就没了回收站兜底；快照与应用无关，删完几小时后想起来仍能捞回。
+  # 用法：
+  #   snapper -c home list                      # 列出快照（paan 免 sudo）
+  #   ls /home/.snapshots/<N>/snapshot/paan     # 直接浏览（嵌套子卷，不需要挂载）
+  #   snapper -c home undochange <N>..0 /home/paan/xxx   # 单文件还原
+  # ⚠️ 首次启用要先手动建子卷（模块只写 /etc/snapper/configs，不建 .snapshots，
+  #    否则 snapper create 报 "IO Error (open failed path:/home/.snapshots)"）：
+  #      sudo btrfs subvolume create /home/.snapshots && sudo chmod 750 /home/.snapshots
+  # 代价：被删的文件只要还被任何快照引用就不释放空间，空间由下面的 LIMIT 控制。
+  # 回滚：删掉这一整段 + rebuild（已生成的快照会留在 /home/.snapshots，需手动 btrfs subvolume delete）。
+  services.snapper = {
+    configs.home = {
+      SUBVOLUME = "/home";
+      ALLOW_USERS = [ "paan" ];
+      TIMELINE_CREATE = true;
+      TIMELINE_CLEANUP = true;
+      TIMELINE_LIMIT_HOURLY = "12";
+      TIMELINE_LIMIT_DAILY = "7";
+      TIMELINE_LIMIT_WEEKLY = "0";
+      TIMELINE_LIMIT_MONTHLY = "0";
+      TIMELINE_LIMIT_YEARLY = "0";
+    };
+  };
+
   # ═══════════════════════════ 网络 ═══════════════════════════
 
   networking.hostName = "nixos";
