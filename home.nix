@@ -1417,13 +1417,7 @@ in
       zinit light zsh-users/zsh-autosuggestions
 
       zsh-newuser-install() { :; }
-      # 开终端先播 anifetch 动效：它自己会把 fastfetch 的信息渲在 ASCII 动效右边，
-      # 所以有它就不再单独跑 fastfetch。只在「交互式 + 真终端」里播；
-      # 脚本、非交互 shell、非 TTY（ssh 带命令、管道等）一律退回纯 fastfetch。
-      # 想临时跳过动画：ANI_OFF=1 zsh
-      if [[ -o interactive && -t 1 && -z $ANI_OFF ]] && command -v anifetch >/dev/null 2>&1; then
-        anifetch example.mp4 --loop 1
-      elif command -v fastfetch >/dev/null 2>&1; then
+      if command -v fastfetch >/dev/null 2>&1; then
         fastfetch
       fi
       if command -v zoxide >/dev/null 2>&1; then
